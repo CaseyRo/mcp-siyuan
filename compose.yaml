@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8006:8000"
+      - "8006:8000"
     environment:
       - TRANSPORT=http
       - HOST=0.0.0.0
