@@ -60,6 +60,8 @@ class SiYuanClient:
         body = resp.json()
         if body.get("code") == 0:
             self._session_authed = True
+            # Remove Token header — SiYuan rejects it even with valid cookie
+            client.headers.pop("Authorization", None)
             logger.info("SiYuan session auth successful")
         else:
             logger.warning("SiYuan session login failed: %s", body.get("msg", ""))
