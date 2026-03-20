@@ -17,6 +17,9 @@ ENV HOST=0.0.0.0
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python3 -c "import urllib.request; r=urllib.request.urlopen('http://localhost:8000/mcp'); exit(0 if r.status in (200,401,406) else 1)" || exit 1
+  CMD python3 -c "import urllib.request,urllib.error; \
+  try: urllib.request.urlopen('http://localhost:8000/mcp'); exit(0) \
+  except urllib.error.HTTPError as e: exit(0 if e.code in (401,406) else 1) \
+  except: exit(1)" || exit 1
 
 CMD ["mcp-siyuan"]
