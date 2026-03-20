@@ -1,0 +1,107 @@
+"""Tier 1 — Read / Query tools for SiYuan."""
+
+from __future__ import annotations
+
+import re
+from typing import Annotated, Any
+
+from pydantic import Field
+
+from mcp_siyuan.client import sy
+
+_ALLOWED_STMT_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
+_MAX_SQL_ROWS = 200
+
+
+async def siyuan_list_notebooks() -> list[dict[str, Any]]:
+    """List all notebooks in the SiYuan workspace."""
+    from mcp_siyuan.models import Notebook
+
+    data = await sy.call("/api/notebook/lsNotebooks")
+    raw = data.get("notebooks", []) if data else []
+    return [Notebook(**nb).model_dump() for nb in raw]
+
+
+async def siyuan_sql_query(stmt: str) -> list[dict[str, Any]]:
+    """Execute a read-only SQL SELECT against SiYuan's internal database.
+
+    Only SELECT statements are permitted. A LIMIT is enforced if not provided.
+    The database contains tables: blocks, notebooks, refs, attributes.
+    Example: SELECT id, content FROM blocks WHERE content LIKE '%TODO%' LIMIT 10
+    """
+    if not _ALLOWED_STMT_RE.match(stmt):
+        raise ValueError("Only SELECT statements are permitted.")
+    if not re.search(r"\bLIMIT\s+\d+", stmt, re.IGNORECASE):
+        stmt = stmt.rstrip("; \t\n") + f" LIMIT {_MAX_SQL_ROWS}"
+    data = await sy.call("/api/query/sql", stmt=stmt)
+    return data if isinstance(data, list) else []
+
+
+async def siyuan_get_document(
+    id: str,
+    max_length: Annotated[int, Field(ge=1, le=524288)] = 65536,
+) -> str:
+    """Get a document's markdown content by its block ID.
+
+    Args:
+        id: The document block ID.
+        max_length: Maximum characters to return (default 65536, max 524288). Content exceeding this is truncated.
+    """
+    data = await sy.call("/api/export/exportMdContent", id=id)
+    content = data.get("content", "") if data else ""
+    if len(content) > max_length:
+        content = content[:max_length] + f"\n\n[... truncated at {max_length} chars]"
+    return content
+
+
+async def siyuan_search(
+    query: str,
+    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+) -> list[dict[str, Any]]:
+    """Full-text search across all SiYuan content.
+
+    Args:
+        query: Search query string.
+        limit: Maximum number of results (default 20, max 100).
+    """
+    data = await sy.call(
+        "/api/search/fullTextSearchBlock",
+        query=query,
+        method=0,
+        types={"document": True, "heading": True, "paragraph": True, "list": True, "listItem": True},
+        page=1,
+        pageSize=limit,
+    )
+    blocks = data.get("blocks", []) if data else []
+    return [
+        {
+            "id": b.get("id", ""),
+            "content": b.get("content", ""),
+            "root_id": b.get("rootID", ""),
+            "box": b.get("box", ""),
+            "hpath": b.get("hPath", ""),
+        }
+        for b in blocks
+    ]
+
+
+async def siyuan_get_block(id: str) -> dict[str, Any]:
+    """Get a single block's content and metadata by ID.
+
+    Args:
+        id: The block ID to retrieve.
+    """
+    data = await sy.call("/api/block/getBlockInfo", id=id)
+    if not data:
+        return {"error": f"Block {id} not found"}
+    return data
+
+
+async def siyuan_get_block_attrs(id: str) -> dict[str, str]:
+    """Get all attributes (system and custom) for a block.
+
+    Args:
+        id: The block ID to retrieve attributes for.
+    """
+    data = await sy.call("/api/attr/getBlockAttrs", id=id)
+    return data if isinstance(data, dict) else {}
