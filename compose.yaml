@@ -1,17 +1,7 @@
 services:
-  siyuan:
-    image: b3log/siyuan:latest
-    restart: unless-stopped
-    volumes:
-      - siyuan-data:/siyuan/workspace
-    environment:
-      - SIYUAN_ACCESS_AUTH_CODE=${SIYUAN_TOKEN:-}
-
   mcp-siyuan:
     build: .
     restart: unless-stopped
-    depends_on:
-      - siyuan
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -19,6 +9,9 @@ services:
       - HOST=0.0.0.0
       - SIYUAN_URL=http://siyuan:6806
       - SIYUAN_TOKEN=${SIYUAN_TOKEN:-}
+    networks:
+      - siyuan_default
 
-volumes:
-  siyuan-data:
+networks:
+  siyuan_default:
+    external: true
