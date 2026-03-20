@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
+from mcp_siyuan.auth import create_auth
 from mcp_siyuan.config import settings
 from mcp_siyuan.tools.read import (
     siyuan_get_block,
@@ -31,7 +32,20 @@ from mcp_siyuan.tools.write import (
     siyuan_update_block,
 )
 
-mcp = FastMCP("mcp-siyuan")
+def _build_auth():
+    """Build auth provider if running in HTTP mode."""
+    if settings.transport != "http":
+        return None
+    api_key = settings.ensure_api_key()
+    return create_auth(
+        api_key=api_key,
+        base_url=settings.base_url,
+        keycloak_issuer=settings.keycloak_issuer,
+        keycloak_audience=settings.keycloak_audience,
+    )
+
+
+mcp = FastMCP("mcp-siyuan", auth=_build_auth())
 
 # Tier 1 — Read / Query
 mcp.tool(siyuan_list_notebooks)

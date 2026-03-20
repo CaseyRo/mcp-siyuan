@@ -65,3 +65,48 @@ def test_invalid_siyuan_url_no_host():
         warnings.simplefilter("ignore")
         with pytest.raises(Exception, match="hostname"):
             Settings(siyuan_url="http://", siyuan_token="t")
+
+
+def test_auth_settings_defaults():
+    """Auth settings have correct defaults."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        s = Settings(siyuan_token="t")
+    assert s.mcp_siyuan_api_key == ""
+    assert s.mcp_siyuan_public_url == ""
+    assert s.keycloak_issuer == "https://auth.cdit-works.de/realms/cdit-mcp"
+    assert s.keycloak_audience == "mcp-siyuan"
+
+
+def test_ensure_api_key_generates():
+    """ensure_api_key generates key when not configured."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        s = Settings(siyuan_token="t", mcp_siyuan_api_key="")
+    key = s.ensure_api_key()
+    assert key.startswith("smcp_")
+    assert s.mcp_siyuan_api_key == key
+
+
+def test_ensure_api_key_preserves():
+    """ensure_api_key returns existing key if configured."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        s = Settings(siyuan_token="t", mcp_siyuan_api_key="smcp_existing")
+    assert s.ensure_api_key() == "smcp_existing"
+
+
+def test_base_url_from_public_url():
+    """base_url uses public URL when set."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        s = Settings(siyuan_token="t", mcp_siyuan_public_url="https://mcp-siyuan.example.com")
+    assert s.base_url == "https://mcp-siyuan.example.com"
+
+
+def test_base_url_computed():
+    """base_url computed from host:port when no public URL."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        s = Settings(siyuan_token="t", host="0.0.0.0", port=9000)
+    assert s.base_url == "http://0.0.0.0:9000"

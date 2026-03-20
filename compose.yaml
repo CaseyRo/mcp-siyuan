@@ -3,12 +3,16 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8006:8000"
     environment:
       - TRANSPORT=http
       - HOST=0.0.0.0
       - SIYUAN_URL=http://siyuan:6806
       - SIYUAN_TOKEN=${SIYUAN_TOKEN:-}
+      - MCP_SIYUAN_API_KEY=${MCP_SIYUAN_API_KEY:-}
+      - MCP_SIYUAN_PUBLIC_URL=${MCP_SIYUAN_PUBLIC_URL:-https://mcp-siyuan.cdit-dev.de}
+      - KEYCLOAK_ISSUER=${KEYCLOAK_ISSUER:-https://auth.cdit-works.de/realms/cdit-mcp}
+      - KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE:-mcp-siyuan}
     networks:
       - siyuan_default
 

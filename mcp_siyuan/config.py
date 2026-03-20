@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -9,13 +10,26 @@ from urllib.parse import urlparse
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings
 
+logger = logging.getLogger(__name__)
+
 
 class Settings(BaseSettings):
+    # SiYuan kernel connection
     siyuan_url: str = "http://siyuan:6806"
     siyuan_token: SecretStr = SecretStr("")
+
+    # Server transport
     transport: Literal["stdio", "http"] = "stdio"
     host: str = "127.0.0.1"
     port: int = 8000
+
+    # MCP server auth
+    mcp_siyuan_api_key: str = ""
+    mcp_siyuan_public_url: str = ""
+
+    # Keycloak JWT validation
+    keycloak_issuer: str = "https://auth.cdit-works.de/realms/cdit-mcp"
+    keycloak_audience: str = "mcp-siyuan"
 
     model_config = {"env_prefix": "", "case_sensitive": False}
 
@@ -35,6 +49,25 @@ class Settings(BaseSettings):
                 "SIYUAN_TOKEN is not set. Requests to SiYuan will be unauthenticated.",
                 stacklevel=2,
             )
+
+    def ensure_api_key(self) -> str:
+        """Return the API key, generating one if not configured."""
+        if self.mcp_siyuan_api_key:
+            return self.mcp_siyuan_api_key
+
+        from mcp_siyuan.auth import generate_api_key
+
+        key = generate_api_key()
+        self.mcp_siyuan_api_key = key
+        logger.warning("Generated API key: %s (set MCP_SIYUAN_API_KEY to persist)", key)
+        return key
+
+    @property
+    def base_url(self) -> str:
+        """Public URL for OAuth metadata, or computed from host:port."""
+        if self.mcp_siyuan_public_url:
+            return self.mcp_siyuan_public_url.rstrip("/")
+        return f"http://{self.host}:{self.port}"
 
 
 settings = Settings()
