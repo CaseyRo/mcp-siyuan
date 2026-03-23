@@ -7,10 +7,10 @@ license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "Casey Romkes" }]
 dependencies = [
-    "fastmcp>=3.0",
-    "httpx>=0.27",
-    "pydantic>=2.0",
-    "pydantic-settings>=2.0",
+    "fastmcp>=3.1.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.12.0",
 ]
 
 [project.scripts]
