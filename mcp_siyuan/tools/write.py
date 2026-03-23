@@ -45,7 +45,11 @@ async def siyuan_update_block(
         data=data,
         dataType=data_type,
     )
-    return result if isinstance(result, (dict, list)) else {"ok": True}
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, list):
+        return {"ok": True, "transactions": result}
+    return {"ok": True}
 
 
 async def siyuan_insert_block(
@@ -76,7 +80,11 @@ async def siyuan_insert_block(
         payload["parentID"] = parent_id
 
     result = await sy.call("/api/block/insertBlock", **payload)
-    return result if isinstance(result, (dict, list)) else {"ok": True}
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, list):
+        return {"ok": True, "transactions": result}
+    return {"ok": True}
 
 
 async def siyuan_append_block(
@@ -95,7 +103,11 @@ async def siyuan_append_block(
         dataType=data_type,
         parentID=parent_id,
     )
-    return result if isinstance(result, (dict, list)) else {"ok": True}
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, list):
+        return {"ok": True, "transactions": result}
+    return {"ok": True}
 
 
 async def siyuan_set_block_attrs(id: str, attrs: dict[str, str]) -> dict[str, Any]:
