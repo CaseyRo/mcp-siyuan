@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any
 
 from pydantic import Field
 
 from mcp_siyuan.client import sy
+
+# --- SQL safety helper ---
+
+_UNSAFE_SQL_RE = re.compile(r"['\";]|--|/\*")
+
+
+def _sanitize(value: str) -> str:
+    """Reject values that could break out of a SQL string literal."""
+    if _UNSAFE_SQL_RE.search(value):
+        raise ValueError(f"Unsafe characters in SQL parameter: {value!r}")
+    return value
 
 
 async def siyuan_get_recent_docs(
@@ -23,7 +35,7 @@ async def siyuan_get_recent_docs(
     """
     where = "WHERE type = 'd'"
     if notebook:
-        where += f" AND box = '{notebook}'"
+        where += f" AND box = '{_sanitize(notebook)}'"
     stmt = f"SELECT id, content AS title, box, hpath, updated FROM blocks {where} ORDER BY updated DESC LIMIT {limit}"
     data = await sy.call("/api/query/sql", stmt=stmt)
     return data if isinstance(data, list) else []
@@ -40,6 +52,9 @@ async def siyuan_find_tasks(
     Searches for task list items (checkbox blocks). Perfect for extracting
     TODOs from daily notes for export to task managers.
 
+    Returns each task with its parent document title (doc_title) so you
+    don't need a follow-up call to identify which note it belongs to.
+
     Args:
         notebook: Optional notebook ID to scope the search. Empty = all notebooks.
         checked: If True, return completed tasks. If False (default), return open/unchecked tasks.
@@ -47,12 +62,18 @@ async def siyuan_find_tasks(
         limit: Max results (default 50, max 100).
     """
     subtype_filter = "'t'" if not checked else "'d'"
-    where = f"WHERE type = 'i' AND subtype = {subtype_filter}"
+    where = f"WHERE b.type = 'i' AND b.subtype = {subtype_filter}"
     if notebook:
-        where += f" AND box = '{notebook}'"
-    where += f" AND updated >= strftime('%Y%m%d%H%M%S', datetime('now', '-{days} days'))"
+        where += f" AND b.box = '{_sanitize(notebook)}'"
+    where += f" AND b.updated >= strftime('%Y%m%d%H%M%S', datetime('now', '-{days} days'))"
 
-    stmt = f"SELECT id, content, box, hpath, root_id, updated FROM blocks {where} ORDER BY updated DESC LIMIT {limit}"
+    stmt = (
+        f"SELECT b.id, b.content, b.box, b.hpath, b.root_id, b.updated, "
+        f"d.content AS doc_title "
+        f"FROM blocks b "
+        f"LEFT JOIN blocks d ON d.id = b.root_id AND d.type = 'd' "
+        f"{where} ORDER BY b.updated DESC LIMIT {limit}"
+    )
     data = await sy.call("/api/query/sql", stmt=stmt)
     return data if isinstance(data, list) else []
 
@@ -61,16 +82,19 @@ async def siyuan_get_backlinks(id: str) -> list[dict[str, Any]]:
     """Get all blocks that reference (link to) a given block or document.
 
     Essential for understanding how content is connected in the knowledge graph.
+    Returns each backlink with its document title (doc_title) for context.
 
     Args:
         id: The block or document ID to find references to.
     """
+    _sanitize(id)
     data = await sy.call("/api/ref/getBacklink", id=id)
     if not data:
         return []
     backlinks = data.get("backlinks", [])
     results = []
     for bl in backlinks:
+        doc_title = bl.get("name", "")
         for block in bl.get("backlinks", []):
             results.append({
                 "id": block.get("id", ""),
@@ -78,6 +102,7 @@ async def siyuan_get_backlinks(id: str) -> list[dict[str, Any]]:
                 "type": block.get("type", ""),
                 "hpath": block.get("hPath", ""),
                 "box": block.get("box", ""),
+                "doc_title": doc_title,
             })
     return results
 
@@ -113,7 +138,14 @@ async def siyuan_search_by_tag(tag: str) -> list[dict[str, Any]]:
     Args:
         tag: The tag to search for (without #). e.g. 'porsche', 'wishlist'.
     """
-    stmt = f"SELECT blocks.id, blocks.content, blocks.type, blocks.box, blocks.hpath, blocks.updated FROM spans INNER JOIN blocks ON spans.block_id = blocks.id WHERE spans.type = 'tag' AND spans.content LIKE '%{tag}%' ORDER BY blocks.updated DESC LIMIT 50"
+    safe_tag = _sanitize(tag)
+    stmt = (
+        f"SELECT blocks.id, blocks.content, blocks.type, blocks.box, "
+        f"blocks.hpath, blocks.updated "
+        f"FROM spans INNER JOIN blocks ON spans.block_id = blocks.id "
+        f"WHERE spans.type = 'tag' AND spans.content LIKE '%{safe_tag}%' "
+        f"ORDER BY blocks.updated DESC LIMIT 50"
+    )
     data = await sy.call("/api/query/sql", stmt=stmt)
     return data if isinstance(data, list) else []
 
@@ -125,32 +157,52 @@ async def siyuan_get_block_children(
     """Get a block and its child blocks as a tree structure.
 
     Useful for understanding document outline or navigating into a section.
+    Uses a single query per depth level instead of per-child queries.
 
     Args:
         id: The block or document ID to get children for.
         depth: How many levels deep to traverse (default 2, max 5).
     """
-    stmt = f"SELECT id, content, type, sort, parent_id FROM blocks WHERE parent_id = '{id}' ORDER BY sort ASC LIMIT 100"
-    data = await sy.call("/api/query/sql", stmt=stmt)
-    children = data if isinstance(data, list) else []
+    safe_id = _sanitize(id)
 
-    if depth > 1:
+    # Fetch all descendants up to the requested depth in one query per level
+    # Start with the direct children
+    all_blocks: dict[str, list[dict[str, Any]]] = {}  # parent_id -> children
+    current_ids = [safe_id]
+
+    for _ in range(depth):
+        if not current_ids:
+            break
+        id_list = ", ".join(f"'{_sanitize(cid)}'" for cid in current_ids)
+        stmt = (
+            f"SELECT id, content, type, sort, parent_id "
+            f"FROM blocks WHERE parent_id IN ({id_list}) "
+            f"ORDER BY sort ASC LIMIT 500"
+        )
+        data = await sy.call("/api/query/sql", stmt=stmt)
+        rows = data if isinstance(data, list) else []
+
+        next_ids = []
+        for row in rows:
+            pid = row.get("parent_id", "")
+            all_blocks.setdefault(pid, []).append(row)
+            next_ids.append(row.get("id", ""))
+        current_ids = next_ids
+
+    # Build tree from collected blocks
+    def _build_tree(parent_id: str) -> list[dict[str, Any]]:
+        children = all_blocks.get(parent_id, [])
         for child in children:
-            child_id = child.get("id", "")
-            if child_id:
-                sub = await siyuan_get_block_children(child_id, depth=depth - 1)
-                child["children"] = sub.get("children", [])
-    else:
-        for child in children:
-            child["children"] = []
+            child["children"] = _build_tree(child.get("id", ""))
+        return children
 
     # Get the parent block info
-    parent_data = await sy.call("/api/block/getBlockInfo", id=id)
+    parent_data = await sy.call("/api/block/getBlockInfo", id=safe_id)
     return {
         "id": id,
         "content": parent_data.get("content", "") if parent_data else "",
         "type": parent_data.get("type", "") if parent_data else "",
-        "children": children,
+        "children": _build_tree(safe_id),
     }
 
 
@@ -192,9 +244,10 @@ async def siyuan_search_with_context(
         }
 
         if context_blocks > 0 and block_id:
+            safe_block_id = _sanitize(block_id)
             ctx_stmt = (
                 f"SELECT id, content, type FROM blocks "
-                f"WHERE parent_id = (SELECT parent_id FROM blocks WHERE id = '{block_id}') "
+                f"WHERE parent_id = (SELECT parent_id FROM blocks WHERE id = '{safe_block_id}') "
                 f"ORDER BY sort ASC"
             )
             siblings = await sy.call("/api/query/sql", stmt=ctx_stmt)
@@ -208,3 +261,75 @@ async def siyuan_search_with_context(
         results.append(entry)
 
     return results
+
+
+async def siyuan_capture_task(
+    text: str,
+    notebook: str = "",
+) -> dict[str, Any]:
+    """Append a new task checkbox to today's daily note.
+
+    This is a high-level convenience tool that combines listing notebooks,
+    creating/opening the daily note, and appending a task — all in one call.
+
+    Args:
+        text: The task text (without checkbox markup — it will be added automatically).
+        notebook: Optional notebook ID. If empty, uses the first open notebook.
+
+    Returns:
+        The daily note document ID and the appended block info.
+    """
+    # Resolve notebook if not provided
+    if not notebook:
+        nb_data = await sy.call("/api/notebook/lsNotebooks")
+        notebooks = nb_data.get("notebooks", []) if nb_data else []
+        open_nbs = [nb for nb in notebooks if not nb.get("closed", False)]
+        if not open_nbs:
+            return {"error": "No open notebooks found"}
+        notebook = open_nbs[0]["id"]
+
+    # Create or open today's daily note
+    daily_id = await sy.call("/api/filetree/createDailyNote", notebook=notebook)
+    if not daily_id:
+        return {"error": "Failed to create daily note"}
+    doc_id = daily_id if isinstance(daily_id, str) else str(daily_id)
+
+    # Append the task
+    task_md = f"* [ ] {text}"
+    result = await sy.call(
+        "/api/block/appendBlock",
+        data=task_md,
+        dataType="markdown",
+        parentID=doc_id,
+    )
+
+    return {
+        "ok": True,
+        "daily_note_id": doc_id,
+        "notebook": notebook,
+        "task": text,
+        "transactions": result if isinstance(result, list) else [],
+    }
+
+
+async def siyuan_get_document_outline(
+    id: str,
+    limit: Annotated[int, Field(ge=1, le=200)] = 100,
+) -> list[dict[str, Any]]:
+    """Get the heading outline of a document.
+
+    Returns only heading blocks in order — useful for understanding document
+    structure without fetching the full content or making N+1 queries.
+
+    Args:
+        id: The document block ID.
+        limit: Max headings to return (default 100, max 200).
+    """
+    safe_id = _sanitize(id)
+    stmt = (
+        f"SELECT id, content, subtype AS level, sort "
+        f"FROM blocks WHERE root_id = '{safe_id}' AND type = 'h' "
+        f"ORDER BY sort ASC LIMIT {limit}"
+    )
+    data = await sy.call("/api/query/sql", stmt=stmt)
+    return data if isinstance(data, list) else []

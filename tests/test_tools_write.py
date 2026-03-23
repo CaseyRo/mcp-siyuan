@@ -42,11 +42,13 @@ async def test_create_document_empty(mock_sy):
 
 @pytest.mark.asyncio
 async def test_update_block(mock_sy):
-    """update_block sends correct payload."""
+    """update_block sends correct payload and wraps list result."""
     from mcp_siyuan.tools.write import siyuan_update_block
 
     mock_sy.call.return_value = [{"doOperations": [{"action": "update"}]}]
     result = await siyuan_update_block(id="b1", data="updated text")
+    assert result["ok"] is True
+    assert "transactions" in result
     mock_sy.call.assert_called_once_with(
         "/api/block/updateBlock",
         id="b1",
@@ -56,8 +58,41 @@ async def test_update_block(mock_sy):
 
 
 @pytest.mark.asyncio
-async def test_insert_block_after(mock_sy):
-    """insert_block with previous_id inserts after."""
+async def test_insert_block_after_new_interface(mock_sy):
+    """insert_block with position='after' and anchor_id."""
+    from mcp_siyuan.tools.write import siyuan_insert_block
+
+    mock_sy.call.return_value = [{"doOperations": [{"action": "insert", "id": "new1"}]}]
+    await siyuan_insert_block(data="new paragraph", position="after", anchor_id="b1")
+    call_kwargs = mock_sy.call.call_args
+    assert call_kwargs.kwargs.get("previousID") == "b1"
+
+
+@pytest.mark.asyncio
+async def test_insert_block_before_new_interface(mock_sy):
+    """insert_block with position='before' and anchor_id."""
+    from mcp_siyuan.tools.write import siyuan_insert_block
+
+    mock_sy.call.return_value = {"ok": True}
+    await siyuan_insert_block(data="before this", position="before", anchor_id="b2")
+    call_kwargs = mock_sy.call.call_args
+    assert call_kwargs.kwargs.get("nextID") == "b2"
+
+
+@pytest.mark.asyncio
+async def test_insert_block_child_new_interface(mock_sy):
+    """insert_block with position='child' and anchor_id."""
+    from mcp_siyuan.tools.write import siyuan_insert_block
+
+    mock_sy.call.return_value = {"ok": True}
+    await siyuan_insert_block(data="child block", position="child", anchor_id="doc1")
+    call_kwargs = mock_sy.call.call_args
+    assert call_kwargs.kwargs.get("parentID") == "doc1"
+
+
+@pytest.mark.asyncio
+async def test_insert_block_legacy_previous_id(mock_sy):
+    """insert_block still works with legacy previous_id param."""
     from mcp_siyuan.tools.write import siyuan_insert_block
 
     mock_sy.call.return_value = [{"doOperations": [{"action": "insert", "id": "new1"}]}]
@@ -67,8 +102,8 @@ async def test_insert_block_after(mock_sy):
 
 
 @pytest.mark.asyncio
-async def test_insert_block_before(mock_sy):
-    """insert_block with next_id inserts before."""
+async def test_insert_block_legacy_next_id(mock_sy):
+    """insert_block still works with legacy next_id param."""
     from mcp_siyuan.tools.write import siyuan_insert_block
 
     mock_sy.call.return_value = {"ok": True}
@@ -78,8 +113,8 @@ async def test_insert_block_before(mock_sy):
 
 
 @pytest.mark.asyncio
-async def test_insert_block_as_child(mock_sy):
-    """insert_block with parent_id inserts as child."""
+async def test_insert_block_legacy_parent_id(mock_sy):
+    """insert_block still works with legacy parent_id param."""
     from mcp_siyuan.tools.write import siyuan_insert_block
 
     mock_sy.call.return_value = {"ok": True}
@@ -101,6 +136,17 @@ async def test_append_block(mock_sy):
         dataType="markdown",
         parentID="doc1",
     )
+
+
+@pytest.mark.asyncio
+async def test_delete_block(mock_sy):
+    """delete_block sends correct payload."""
+    from mcp_siyuan.tools.write import siyuan_delete_block
+
+    mock_sy.call.return_value = [{"doOperations": [{"action": "delete"}]}]
+    result = await siyuan_delete_block(id="b1")
+    assert result["ok"] is True
+    mock_sy.call.assert_called_once_with("/api/block/deleteBlock", id="b1")
 
 
 @pytest.mark.asyncio
@@ -129,3 +175,26 @@ async def test_daily_note(mock_sy):
         "/api/filetree/createDailyNote",
         notebook="nb1",
     )
+
+
+@pytest.mark.asyncio
+async def test_daily_note_auto_notebook(mock_sy):
+    """daily_note picks first open notebook when none specified."""
+    from mcp_siyuan.tools.write import siyuan_daily_note
+
+    calls = []
+    async def mock_call(endpoint, **kwargs):
+        calls.append(endpoint)
+        if endpoint == "/api/notebook/lsNotebooks":
+            return {"notebooks": [
+                {"id": "nb1", "name": "Work", "closed": False},
+                {"id": "nb2", "name": "Archive", "closed": True},
+            ]}
+        elif endpoint == "/api/filetree/createDailyNote":
+            assert kwargs["notebook"] == "nb1"
+            return "daily-auto-id"
+        return None
+
+    mock_sy.call = mock_call
+    result = await siyuan_daily_note()
+    assert result == "daily-auto-id"

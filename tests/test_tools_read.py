@@ -154,12 +154,21 @@ async def test_search_empty(mock_sy):
 
 @pytest.mark.asyncio
 async def test_get_block(mock_sy):
-    """get_block returns block data."""
+    """get_block returns shaped block data with only essential fields."""
     from mcp_siyuan.tools.read import siyuan_get_block
 
-    mock_sy.call.return_value = {"id": "b1", "type": "p", "content": "hello"}
+    mock_sy.call.return_value = {
+        "id": "b1", "type": "p", "content": "hello",
+        "parentID": "doc1", "rootID": "r1", "box": "nb1",
+        "hPath": "/notes", "updated": "20260320",
+        "internalField": "should be dropped",
+    }
     result = await siyuan_get_block(id="b1")
     assert result["type"] == "p"
+    assert result["parent_id"] == "doc1"
+    assert result["root_id"] == "r1"
+    assert result["hpath"] == "/notes"
+    assert "internalField" not in result
 
 
 @pytest.mark.asyncio

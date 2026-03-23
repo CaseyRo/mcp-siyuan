@@ -15,9 +15,11 @@ from mcp_siyuan.tools.read import (
     siyuan_sql_query,
 )
 from mcp_siyuan.tools.smart import (
+    siyuan_capture_task,
     siyuan_find_tasks,
     siyuan_get_backlinks,
     siyuan_get_block_children,
+    siyuan_get_document_outline,
     siyuan_get_recent_docs,
     siyuan_get_tags,
     siyuan_search_by_tag,
@@ -27,6 +29,7 @@ from mcp_siyuan.tools.write import (
     siyuan_append_block,
     siyuan_create_document,
     siyuan_daily_note,
+    siyuan_delete_block,
     siyuan_insert_block,
     siyuan_set_block_attrs,
     siyuan_update_block,
@@ -60,6 +63,7 @@ mcp.tool(siyuan_create_document)
 mcp.tool(siyuan_update_block)
 mcp.tool(siyuan_insert_block)
 mcp.tool(siyuan_append_block)
+mcp.tool(siyuan_delete_block)
 mcp.tool(siyuan_set_block_attrs)
 mcp.tool(siyuan_daily_note)
 
@@ -71,6 +75,8 @@ mcp.tool(siyuan_get_tags)
 mcp.tool(siyuan_search_by_tag)
 mcp.tool(siyuan_get_block_children)
 mcp.tool(siyuan_search_with_context)
+mcp.tool(siyuan_capture_task)
+mcp.tool(siyuan_get_document_outline)
 
 
 def main() -> None:

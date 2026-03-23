@@ -14,7 +14,11 @@ _MAX_SQL_ROWS = 200
 
 
 async def siyuan_list_notebooks() -> list[dict[str, Any]]:
-    """List all notebooks in the SiYuan workspace."""
+    """List all notebooks in the SiYuan workspace.
+
+    Use this first to discover notebook IDs before creating documents or daily notes.
+    Notebooks with closed=true cannot accept new documents.
+    """
     from mcp_siyuan.models import Notebook
 
     data = await sy.call("/api/notebook/lsNotebooks")
@@ -26,7 +30,17 @@ async def siyuan_sql_query(stmt: str) -> list[dict[str, Any]]:
     """Execute a read-only SQL SELECT against SiYuan's internal database.
 
     Only SELECT statements are permitted. A LIMIT is enforced if not provided.
-    The database contains tables: blocks, notebooks, refs, attributes.
+
+    Tables and key columns:
+      blocks: id, parent_id, root_id, box, path, hpath, name, content,
+              markdown, type, subtype, sort, created, updated
+      spans:  id, block_id, content, type (e.g. 'tag', 'a')
+      refs:   id, block_id, def_block_id, content, type
+      attributes: id, block_id, name, value
+
+    Block types: d=document, h=heading, p=paragraph, l=list, i=listItem,
+                 c=code, m=math, t=table, s=superBlock, b=blockquote
+
     Example: SELECT id, content FROM blocks WHERE content LIKE '%TODO%' LIMIT 10
     """
     if not _ALLOWED_STMT_RE.match(stmt):
@@ -58,7 +72,9 @@ async def siyuan_search(
     query: str,
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
-    """Full-text search across all SiYuan content.
+    """Quick full-text search across all SiYuan content (no surrounding context).
+
+    For richer results with surrounding blocks, use siyuan_search_with_context instead.
 
     Args:
         query: Search query string.
@@ -85,8 +101,14 @@ async def siyuan_search(
     ]
 
 
+_BLOCK_FIELDS = ("id", "type", "content", "parent_id", "root_id", "box", "hpath", "updated")
+
+
 async def siyuan_get_block(id: str) -> dict[str, Any]:
     """Get a single block's content and metadata by ID.
+
+    Returns only the essential fields: id, type, content, parent_id,
+    root_id, box, hpath, updated.
 
     Args:
         id: The block ID to retrieve.
@@ -94,7 +116,13 @@ async def siyuan_get_block(id: str) -> dict[str, Any]:
     data = await sy.call("/api/block/getBlockInfo", id=id)
     if not data:
         return {"error": f"Block {id} not found"}
-    return data
+    # Normalise field names and project only useful fields
+    normalised: dict[str, Any] = {}
+    for key in _BLOCK_FIELDS:
+        # SiYuan uses camelCase for some fields in this endpoint
+        camel = {"parent_id": "parentID", "root_id": "rootID", "hpath": "hPath"}.get(key, key)
+        normalised[key] = data.get(key) or data.get(camel, "")
+    return normalised
 
 
 async def siyuan_get_block_attrs(id: str) -> dict[str, str]:
