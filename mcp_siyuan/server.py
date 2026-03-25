@@ -31,6 +31,9 @@ from mcp_siyuan.tools.write import (
     siyuan_daily_note,
     siyuan_delete_block,
     siyuan_insert_block,
+    siyuan_move_block,
+    siyuan_move_doc,
+    siyuan_rename_doc,
     siyuan_set_block_attrs,
     siyuan_update_block,
 )
@@ -65,6 +68,9 @@ mcp.tool(siyuan_insert_block)
 mcp.tool(siyuan_append_block)
 mcp.tool(siyuan_delete_block)
 mcp.tool(siyuan_set_block_attrs)
+mcp.tool(siyuan_move_doc)
+mcp.tool(siyuan_rename_doc)
+mcp.tool(siyuan_move_block)
 mcp.tool(siyuan_daily_note)
 
 # Smart — LLM-ergonomic high-level tools

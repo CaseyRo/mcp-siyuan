@@ -149,6 +149,60 @@ async def siyuan_set_block_attrs(id: str, attrs: dict[str, str]) -> dict[str, An
     return result if isinstance(result, dict) else {"ok": True}
 
 
+async def siyuan_move_doc(from_ids: list[str], to_id: str) -> dict[str, Any]:
+    """Move one or more documents to a new parent document or notebook.
+
+    Args:
+        from_ids: List of document IDs to move.
+        to_id: Target parent document ID or notebook ID.
+    """
+    result = await sy.call(
+        "/api/filetree/moveDocsByID",
+        fromIDs=from_ids,
+        toID=to_id,
+    )
+    return _wrap_result(result)
+
+
+async def siyuan_rename_doc(id: str, title: str) -> dict[str, Any]:
+    """Rename a document without moving it.
+
+    Args:
+        id: The document ID to rename.
+        title: New title for the document.
+    """
+    result = await sy.call(
+        "/api/filetree/renameDocByID",
+        id=id,
+        title=title,
+    )
+    return _wrap_result(result)
+
+
+async def siyuan_move_block(
+    id: str, parent_id: str = "", previous_id: str = ""
+) -> dict[str, Any]:
+    """Move a block to a new position.
+
+    At least one of parent_id or previous_id must be provided.
+    If both are given, previous_id takes precedence (SiYuan API behaviour).
+
+    Args:
+        id: The block ID to move.
+        parent_id: Target parent block ID — makes the block a child of this parent.
+        previous_id: Place the block after this sibling block.
+    """
+    if not parent_id and not previous_id:
+        raise ValueError("At least one of parent_id or previous_id is required.")
+    result = await sy.call(
+        "/api/block/moveBlock",
+        id=id,
+        parentID=parent_id,
+        previousID=previous_id,
+    )
+    return _wrap_result(result)
+
+
 async def siyuan_daily_note(notebook: str = "") -> str:
     """Create or open today's daily note in a notebook.
 

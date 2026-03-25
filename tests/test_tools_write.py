@@ -164,6 +164,110 @@ async def test_set_block_attrs(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_move_doc_single(mock_sy):
+    """move_doc sends single doc ID to moveDocsByID."""
+    from mcp_siyuan.tools.write import siyuan_move_doc
+
+    mock_sy.call.return_value = None
+    result = await siyuan_move_doc(from_ids=["doc1"], to_id="notebook1")
+    assert result == {"ok": True}
+    mock_sy.call.assert_called_once_with(
+        "/api/filetree/moveDocsByID",
+        fromIDs=["doc1"],
+        toID="notebook1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_move_doc_multiple(mock_sy):
+    """move_doc supports moving multiple documents at once."""
+    from mcp_siyuan.tools.write import siyuan_move_doc
+
+    mock_sy.call.return_value = None
+    result = await siyuan_move_doc(from_ids=["doc1", "doc2"], to_id="parent-doc")
+    assert result == {"ok": True}
+    mock_sy.call.assert_called_once_with(
+        "/api/filetree/moveDocsByID",
+        fromIDs=["doc1", "doc2"],
+        toID="parent-doc",
+    )
+
+
+@pytest.mark.asyncio
+async def test_rename_doc(mock_sy):
+    """rename_doc sends id and title to renameDocByID."""
+    from mcp_siyuan.tools.write import siyuan_rename_doc
+
+    mock_sy.call.return_value = None
+    result = await siyuan_rename_doc(id="doc1", title="New Title")
+    assert result == {"ok": True}
+    mock_sy.call.assert_called_once_with(
+        "/api/filetree/renameDocByID",
+        id="doc1",
+        title="New Title",
+    )
+
+
+@pytest.mark.asyncio
+async def test_move_block_previous(mock_sy):
+    """move_block with previous_id sends correct payload."""
+    from mcp_siyuan.tools.write import siyuan_move_block
+
+    mock_sy.call.return_value = [{"doOperations": [{"action": "move"}]}]
+    result = await siyuan_move_block(id="block1", previous_id="sibling1")
+    assert result["ok"] is True
+    mock_sy.call.assert_called_once_with(
+        "/api/block/moveBlock",
+        id="block1",
+        parentID="",
+        previousID="sibling1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_move_block_parent(mock_sy):
+    """move_block with parent_id sends correct payload."""
+    from mcp_siyuan.tools.write import siyuan_move_block
+
+    mock_sy.call.return_value = [{"doOperations": [{"action": "move"}]}]
+    result = await siyuan_move_block(id="block1", parent_id="parent1")
+    assert result["ok"] is True
+    mock_sy.call.assert_called_once_with(
+        "/api/block/moveBlock",
+        id="block1",
+        parentID="parent1",
+        previousID="",
+    )
+
+
+@pytest.mark.asyncio
+async def test_move_block_both(mock_sy):
+    """move_block with both previous_id and parent_id sends both."""
+    from mcp_siyuan.tools.write import siyuan_move_block
+
+    mock_sy.call.return_value = [{"doOperations": [{"action": "move"}]}]
+    result = await siyuan_move_block(
+        id="block1", previous_id="sibling1", parent_id="parent1"
+    )
+    assert result["ok"] is True
+    mock_sy.call.assert_called_once_with(
+        "/api/block/moveBlock",
+        id="block1",
+        parentID="parent1",
+        previousID="sibling1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_move_block_no_anchor(mock_sy):
+    """move_block raises ValueError when no anchor is provided."""
+    from mcp_siyuan.tools.write import siyuan_move_block
+
+    with pytest.raises(ValueError, match="At least one of"):
+        await siyuan_move_block(id="block1")
+
+
+@pytest.mark.asyncio
 async def test_daily_note(mock_sy):
     """daily_note returns document ID."""
     from mcp_siyuan.tools.write import siyuan_daily_note
