@@ -39,6 +39,35 @@ async def test_create_notebook_null_response(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_rename_notebook(mock_sy):
+    """rename_notebook sends notebook ID and new name."""
+    from mcp_siyuan.tools.write import siyuan_rename_notebook
+
+    mock_sy.call.return_value = None
+    result = await siyuan_rename_notebook(notebook="nb1", name="New Name")
+    assert result == {"ok": True}
+    mock_sy.call.assert_called_once_with(
+        "/api/notebook/renameNotebook",
+        notebook="nb1",
+        name="New Name",
+    )
+
+
+@pytest.mark.asyncio
+async def test_remove_notebook(mock_sy):
+    """remove_notebook sends notebook ID."""
+    from mcp_siyuan.tools.write import siyuan_remove_notebook
+
+    mock_sy.call.return_value = None
+    result = await siyuan_remove_notebook(notebook="nb1")
+    assert result == {"ok": True}
+    mock_sy.call.assert_called_once_with(
+        "/api/notebook/removeNotebook",
+        notebook="nb1",
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_document(mock_sy):
     """create_document returns new doc ID."""
     from mcp_siyuan.tools.write import siyuan_create_document

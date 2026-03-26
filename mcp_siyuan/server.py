@@ -34,7 +34,9 @@ from mcp_siyuan.tools.write import (
     siyuan_insert_block,
     siyuan_move_block,
     siyuan_move_doc,
+    siyuan_remove_notebook,
     siyuan_rename_doc,
+    siyuan_rename_notebook,
     siyuan_set_block_attrs,
     siyuan_update_block,
 )
@@ -64,6 +66,8 @@ mcp.tool(siyuan_get_block_attrs)
 
 # Tier 2 — Write
 mcp.tool(siyuan_create_notebook)
+mcp.tool(siyuan_rename_notebook)
+mcp.tool(siyuan_remove_notebook)
 mcp.tool(siyuan_create_document)
 mcp.tool(siyuan_update_block)
 mcp.tool(siyuan_insert_block)

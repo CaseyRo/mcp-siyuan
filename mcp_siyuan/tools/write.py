@@ -29,6 +29,37 @@ async def siyuan_create_notebook(name: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {"ok": True}
 
 
+async def siyuan_rename_notebook(notebook: str, name: str) -> dict[str, Any]:
+    """Rename an existing notebook.
+
+    Args:
+        notebook: Notebook ID to rename.
+        name: New name for the notebook.
+    """
+    result = await sy.call(
+        "/api/notebook/renameNotebook",
+        notebook=notebook,
+        name=name,
+    )
+    return _wrap_result(result)
+
+
+async def siyuan_remove_notebook(notebook: str) -> dict[str, Any]:
+    """Remove a notebook and all its documents.
+
+    This permanently removes the notebook. Use with caution — deletion cannot
+    be undone via the API (only via SiYuan's in-app undo).
+
+    Args:
+        notebook: Notebook ID to remove.
+    """
+    result = await sy.call(
+        "/api/notebook/removeNotebook",
+        notebook=notebook,
+    )
+    return _wrap_result(result)
+
+
 async def siyuan_create_document(
     notebook: str, path: str, markdown: str = ""
 ) -> str:
