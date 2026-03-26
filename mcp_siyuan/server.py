@@ -28,6 +28,7 @@ from mcp_siyuan.tools.smart import (
 from mcp_siyuan.tools.write import (
     siyuan_append_block,
     siyuan_create_document,
+    siyuan_create_notebook,
     siyuan_daily_note,
     siyuan_delete_block,
     siyuan_insert_block,
@@ -62,6 +63,7 @@ mcp.tool(siyuan_get_block)
 mcp.tool(siyuan_get_block_attrs)
 
 # Tier 2 — Write
+mcp.tool(siyuan_create_notebook)
 mcp.tool(siyuan_create_document)
 mcp.tool(siyuan_update_block)
 mcp.tool(siyuan_insert_block)

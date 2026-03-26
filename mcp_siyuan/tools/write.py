@@ -16,6 +16,19 @@ def _wrap_result(result: Any) -> dict[str, Any]:
     return {"ok": True}
 
 
+async def siyuan_create_notebook(name: str) -> dict[str, Any]:
+    """Create a new notebook in SiYuan.
+
+    Args:
+        name: Name for the new notebook.
+
+    Returns:
+        Dict containing the notebook object with its ID.
+    """
+    data = await sy.call("/api/notebook/createNotebook", name=name)
+    return data if isinstance(data, dict) else {"ok": True}
+
+
 async def siyuan_create_document(
     notebook: str, path: str, markdown: str = ""
 ) -> str:

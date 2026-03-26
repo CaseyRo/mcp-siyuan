@@ -13,6 +13,32 @@ def mock_sy():
 
 
 @pytest.mark.asyncio
+async def test_create_notebook(mock_sy):
+    """create_notebook returns notebook object with ID."""
+    from mcp_siyuan.tools.write import siyuan_create_notebook
+
+    mock_sy.call.return_value = {
+        "notebook": {"id": "20260326100000-abc1234", "name": "Test Notebook"}
+    }
+    result = await siyuan_create_notebook(name="Test Notebook")
+    assert result["notebook"]["id"] == "20260326100000-abc1234"
+    mock_sy.call.assert_called_once_with(
+        "/api/notebook/createNotebook",
+        name="Test Notebook",
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_notebook_null_response(mock_sy):
+    """create_notebook handles null data response."""
+    from mcp_siyuan.tools.write import siyuan_create_notebook
+
+    mock_sy.call.return_value = None
+    result = await siyuan_create_notebook(name="Another Notebook")
+    assert result == {"ok": True}
+
+
+@pytest.mark.asyncio
 async def test_create_document(mock_sy):
     """create_document returns new doc ID."""
     from mcp_siyuan.tools.write import siyuan_create_document
