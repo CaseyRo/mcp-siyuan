@@ -27,9 +27,11 @@ class Settings(BaseSettings):
     mcp_siyuan_api_key: str = ""
     mcp_siyuan_public_url: str = ""
 
-    # Keycloak JWT validation
+    # Keycloak OIDC
     keycloak_issuer: str = "https://auth.cdit-works.de/realms/cdit-mcp"
     keycloak_audience: str = "mcp-siyuan"
+    keycloak_client_id: str = "mcp-siyuan"
+    keycloak_client_secret: str = ""
 
     model_config = {"env_prefix": "", "case_sensitive": False}
 

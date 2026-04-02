@@ -1,5 +1,7 @@
 """Tests for authentication module."""
 
+from unittest.mock import patch, MagicMock
+
 import pytest
 
 from mcp_siyuan.auth import BearerTokenVerifier, create_auth, generate_api_key
@@ -53,23 +55,37 @@ def test_generate_api_key_unique():
     assert len(keys) == 10
 
 
-def test_create_auth_with_api_key():
+@patch("mcp_siyuan.auth.OIDCProxy")
+def test_create_auth_with_api_key(mock_oidc_cls):
     """create_auth returns MultiAuth with bearer verifier when key is provided."""
+    mock_oidc_cls.return_value = MagicMock()
     auth = create_auth(
         api_key="smcp_test",
         base_url="https://example.com",
         keycloak_issuer="https://auth.example.com/realms/test",
         keycloak_audience="mcp-test",
+        keycloak_client_id="mcp-siyuan",
+        keycloak_client_secret="test-secret",
     )
     assert auth is not None
+    mock_oidc_cls.assert_called_once_with(
+        config_url="https://auth.example.com/realms/test/.well-known/openid-configuration",
+        client_id="mcp-siyuan",
+        client_secret="test-secret",
+        base_url="https://example.com",
+    )
 
 
-def test_create_auth_without_api_key():
-    """create_auth works without API key (JWT only)."""
+@patch("mcp_siyuan.auth.OIDCProxy")
+def test_create_auth_without_api_key(mock_oidc_cls):
+    """create_auth works without API key (OIDC only)."""
+    mock_oidc_cls.return_value = MagicMock()
     auth = create_auth(
         api_key=None,
         base_url="https://example.com",
         keycloak_issuer="https://auth.example.com/realms/test",
         keycloak_audience="mcp-test",
+        keycloak_client_id="mcp-siyuan",
+        keycloak_client_secret="test-secret",
     )
     assert auth is not None
