@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastmcp import FastMCP
+from mcp.types import Icon
 
 from mcp_siyuan.auth import create_auth
 from mcp_siyuan.config import settings
@@ -63,7 +64,17 @@ def _build_auth():
     )
 
 
-mcp = FastMCP("mcp-siyuan", auth=_build_auth())
+mcp = FastMCP(
+    "mcp-siyuan",
+    auth=_build_auth(),
+    icons=[
+        Icon(
+            src="https://b3log.org/images/brand/siyuan-128.png",
+            mimeType="image/png",
+            sizes=["128x128"],
+        ),
+    ],
+)
 
 # Tier 1 — Read / Query
 mcp.tool(siyuan_list_notebooks)
