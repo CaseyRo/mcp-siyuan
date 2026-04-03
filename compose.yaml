@@ -15,8 +15,14 @@ services:
       - KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE:-mcp-siyuan}
       - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-mcp-siyuan}
       - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+      - FASTMCP_HOME=/data/fastmcp
+    volumes:
+      - fastmcp-data:/data/fastmcp
     networks:
       - siyuan_default
+
+volumes:
+  fastmcp-data:
 
 networks:
   siyuan_default:
