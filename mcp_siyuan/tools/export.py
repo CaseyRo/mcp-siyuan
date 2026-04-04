@@ -155,7 +155,7 @@ async def siyuan_export_pdf(
     size_kb = len(pdf_bytes) // 1024
 
     result: list = [
-        File(data=pdf_bytes, format="pdf", name=f"{name}.pdf"),
+        File(data=pdf_bytes, format="pdf", name=name),
     ]
 
     summary = f"Generated PDF: {name}.pdf ({size_kb} KB, {page_size} {orientation}, sha256: {pdf_sha256})"
