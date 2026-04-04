@@ -16,6 +16,10 @@ services:
       - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-mcp-siyuan}
       - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
       - FASTMCP_HOME=/data/fastmcp
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     volumes:
       - fastmcp-data:/data/fastmcp
     networks:
