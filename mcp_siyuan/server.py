@@ -26,6 +26,7 @@ from mcp_siyuan.tools.smart import (
     siyuan_search_by_tag,
     siyuan_search_with_context,
 )
+from mcp_siyuan.tools.export import siyuan_export_pdf
 from mcp_siyuan.tools.write import (
     siyuan_append_block,
     siyuan_create_document,
@@ -109,6 +110,9 @@ mcp.tool(siyuan_get_block_children)
 mcp.tool(siyuan_search_with_context)
 mcp.tool(siyuan_capture_task)
 mcp.tool(siyuan_get_document_outline)
+
+# Export
+mcp.tool(siyuan_export_pdf)
 
 
 def main() -> None:
