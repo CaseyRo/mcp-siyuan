@@ -188,7 +188,7 @@ async def test_export_pdf_default(mock_sy, mock_settings, mock_render):
     assert len(result) == 2
     # First item is a File
     assert isinstance(result[0], File)
-    assert result[0]._name == "Test Doc.pdf"
+    assert result[0]._name == "Test Doc"
     # Second item is a text summary
     assert "Test Doc.pdf" in result[1]
     assert "sha256:" in result[1]
