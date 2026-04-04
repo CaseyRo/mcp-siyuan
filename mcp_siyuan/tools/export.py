@@ -58,12 +58,90 @@ def _restricted_fetcher(url: str, timeout: int = 10, ssl_context: Any = None) ->
     return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
 
 
+_PRINT_CSS = """
+/* Page layout */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #1a1a1a;
+}
+
+/* Hide Protyle editor chrome */
+.protyle-attr,
+.protyle-action,
+[contenteditable] { display: contents !important; }
+
+/* Headings */
+.h1 > div:first-child { font-size: 22pt; font-weight: 700; margin: 18pt 0 8pt; }
+.h2 > div:first-child { font-size: 17pt; font-weight: 700; margin: 14pt 0 6pt; }
+.h3 > div:first-child { font-size: 14pt; font-weight: 700; margin: 12pt 0 5pt; }
+.h4 > div:first-child { font-size: 12pt; font-weight: 700; margin: 10pt 0 4pt; }
+.h5 > div:first-child { font-size: 11pt; font-weight: 700; margin: 8pt 0 3pt; }
+.h6 > div:first-child { font-size: 10pt; font-weight: 700; margin: 8pt 0 3pt; }
+.h1, .h2, .h3, .h4, .h5, .h6 {
+    padding: 0 !important; margin: 0 !important;
+    page-break-after: avoid;
+}
+
+/* Paragraphs */
+.p { padding: 0 !important; margin: 0 0 6pt !important; }
+
+/* Lists */
+.list { padding: 0 0 0 18pt !important; margin: 0 0 6pt !important; }
+.list[data-subtype="u"] { list-style-type: disc; display: block; }
+.list[data-subtype="o"] { list-style-type: decimal; display: block; }
+.li { display: list-item; padding: 0 !important; margin: 0 0 3pt !important; }
+.li .list { margin: 3pt 0 0 !important; }
+
+/* Blockquote */
+.bq {
+    border-left: 3pt solid #ccc; padding: 4pt 0 4pt 12pt !important;
+    margin: 6pt 0 !important; color: #555;
+}
+
+/* Horizontal rule */
+.hr { border: none; border-top: 1pt solid #ddd; margin: 10pt 0 !important; padding: 0 !important; }
+.hr > div { display: none; }
+
+/* Code blocks */
+.code-block {
+    background: #f5f5f5; padding: 8pt 10pt !important; margin: 6pt 0 !important;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 9pt; line-height: 1.5; border-radius: 4pt;
+    white-space: pre-wrap; word-break: break-all;
+}
+.code-block .protyle-action { display: none !important; }
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 10pt; }
+th, td { border: 0.5pt solid #ccc; padding: 4pt 8pt; text-align: left; }
+th { background: #f5f5f5; font-weight: 600; }
+
+/* Super block */
+.sb { padding: 0 !important; margin: 0 !important; }
+
+/* Bold / emphasis */
+[data-type="strong"] { font-weight: 700; }
+[data-type="em"] { font-style: italic; }
+
+/* Links */
+a { color: #1a73e8; text-decoration: none; }
+
+/* Images */
+img { max-width: 100%; height: auto; }
+
+/* Avoid page breaks inside blocks */
+.p, .li, .code-block, table { page-break-inside: avoid; }
+"""
+
+
 def _page_css(page_size: str, orientation: str) -> str:
     """Generate @page CSS for the given size and orientation."""
     width, height = PAGE_SIZES[page_size]
     if orientation == "landscape":
         width, height = height, width
-    return f"@page {{ size: {width}mm {height}mm; margin: 15mm; }}"
+    return f"@page {{ size: {width}mm {height}mm; margin: 15mm; }}\n{_PRINT_CSS}"
 
 
 async def _get_preview_html(id: str) -> tuple[str, str]:
