@@ -59,81 +59,223 @@ def _restricted_fetcher(url: str, timeout: int = 10, ssl_context: Any = None) ->
 
 
 _PRINT_CSS = """
-/* Page layout */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
-    font-size: 11pt;
-    line-height: 1.6;
-    color: #1a1a1a;
+    font-size: 11pt; line-height: 1.6; color: #1a1a1a;
 }
-
-/* Hide Protyle editor chrome */
-.protyle-attr,
-.protyle-action,
-[contenteditable] { display: contents !important; }
-
-/* Headings */
-.h1 > div:first-child { font-size: 22pt; font-weight: 700; margin: 18pt 0 8pt; }
-.h2 > div:first-child { font-size: 17pt; font-weight: 700; margin: 14pt 0 6pt; }
-.h3 > div:first-child { font-size: 14pt; font-weight: 700; margin: 12pt 0 5pt; }
-.h4 > div:first-child { font-size: 12pt; font-weight: 700; margin: 10pt 0 4pt; }
-.h5 > div:first-child { font-size: 11pt; font-weight: 700; margin: 8pt 0 3pt; }
-.h6 > div:first-child { font-size: 10pt; font-weight: 700; margin: 8pt 0 3pt; }
-.h1, .h2, .h3, .h4, .h5, .h6 {
-    padding: 0 !important; margin: 0 !important;
-    page-break-after: avoid;
+h1 { font-size: 22pt; margin: 18pt 0 8pt; }
+h2 { font-size: 17pt; margin: 14pt 0 6pt; }
+h3 { font-size: 14pt; margin: 12pt 0 5pt; }
+h4 { font-size: 12pt; margin: 10pt 0 4pt; }
+h5 { font-size: 11pt; margin: 8pt 0 3pt; }
+h6 { font-size: 10pt; margin: 8pt 0 3pt; }
+h1, h2, h3, h4, h5, h6 { page-break-after: avoid; }
+p { margin: 0 0 6pt; }
+ul, ol { padding-left: 20pt; margin: 0 0 6pt; }
+li { margin: 0 0 2pt; }
+blockquote {
+    border-left: 3pt solid #ccc; padding: 4pt 0 4pt 12pt;
+    margin: 6pt 0; color: #555;
 }
-
-/* Paragraphs */
-.p { padding: 0 !important; margin: 0 0 6pt !important; }
-
-/* Lists */
-.list { padding: 0 0 0 18pt !important; margin: 0 0 6pt !important; }
-.list[data-subtype="u"] { list-style-type: disc; display: block; }
-.list[data-subtype="o"] { list-style-type: decimal; display: block; }
-.li { display: list-item; padding: 0 !important; margin: 0 0 3pt !important; }
-.li .list { margin: 3pt 0 0 !important; }
-
-/* Blockquote */
-.bq {
-    border-left: 3pt solid #ccc; padding: 4pt 0 4pt 12pt !important;
-    margin: 6pt 0 !important; color: #555;
-}
-
-/* Horizontal rule */
-.hr { border: none; border-top: 1pt solid #ddd; margin: 10pt 0 !important; padding: 0 !important; }
-.hr > div { display: none; }
-
-/* Code blocks */
-.code-block {
-    background: #f5f5f5; padding: 8pt 10pt !important; margin: 6pt 0 !important;
+hr { border: none; border-top: 1pt solid #ddd; margin: 10pt 0; }
+pre {
+    background: #f5f5f5; padding: 8pt 10pt; margin: 6pt 0;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 9pt; line-height: 1.5; border-radius: 4pt;
     white-space: pre-wrap; word-break: break-all;
 }
-.code-block .protyle-action { display: none !important; }
-
-/* Tables */
 table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 10pt; }
 th, td { border: 0.5pt solid #ccc; padding: 4pt 8pt; text-align: left; }
 th { background: #f5f5f5; font-weight: 600; }
-
-/* Super block */
-.sb { padding: 0 !important; margin: 0 !important; }
-
-/* Bold / emphasis */
-[data-type="strong"] { font-weight: 700; }
-[data-type="em"] { font-style: italic; }
-
-/* Links */
 a { color: #1a73e8; text-decoration: none; }
-
-/* Images */
 img { max-width: 100%; height: auto; }
-
-/* Avoid page breaks inside blocks */
-.p, .li, .code-block, table { page-break-inside: avoid; }
+p, li, pre, table { page-break-inside: avoid; }
 """
+
+
+def _protyle_to_html(protyle_html: str) -> str:
+    """Convert SiYuan Protyle editor HTML to clean semantic HTML."""
+    from html.parser import HTMLParser
+    from io import StringIO
+
+    class ProtyleConverter(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.out = StringIO()
+            self.skip_depth = 0  # depth of elements being skipped
+            self.tag_stack: list[str] = []
+
+        def _write(self, s: str) -> None:
+            if self.skip_depth == 0:
+                self.out.write(s)
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            attr_dict = dict(attrs)
+            classes = (attr_dict.get("class") or "").split()
+
+            # Skip editor chrome entirely
+            if "protyle-attr" in classes or "protyle-action" in classes:
+                self.skip_depth += 1
+                return
+
+            if self.skip_depth > 0:
+                self.skip_depth += 1
+                return
+
+            dtype = attr_dict.get("data-type", "")
+            subtype = attr_dict.get("data-subtype", "")
+
+            # Map Protyle blocks to semantic HTML
+            if dtype == "NodeHeading":
+                level = subtype if subtype in ("h1", "h2", "h3", "h4", "h5", "h6") else "h2"
+                self._write(f"<{level}>")
+                self.tag_stack.append(level)
+                return
+
+            if dtype == "NodeParagraph":
+                self._write("<p>")
+                self.tag_stack.append("p")
+                return
+
+            if dtype == "NodeList":
+                list_tag = "ol" if subtype == "o" else "ul"
+                self._write(f"<{list_tag}>")
+                self.tag_stack.append(list_tag)
+                return
+
+            if dtype == "NodeListItem":
+                self._write("<li>")
+                self.tag_stack.append("li")
+                return
+
+            if dtype == "NodeBlockquote" or "bq" in classes:
+                self._write("<blockquote>")
+                self.tag_stack.append("blockquote")
+                return
+
+            if dtype == "NodeThematicBreak" or "hr" in classes:
+                self._write("<hr>")
+                self.tag_stack.append("hr")
+                return
+
+            if dtype == "NodeCodeBlock" or "code-block" in classes:
+                self._write("<pre><code>")
+                self.tag_stack.append("code-block")
+                return
+
+            if dtype == "NodeSuperBlock" or "sb" in classes:
+                self._write("<div>")
+                self.tag_stack.append("div")
+                return
+
+            # Inline elements
+            if tag == "span":
+                stype = attr_dict.get("data-type", "")
+                if stype == "strong":
+                    self._write("<strong>")
+                    self.tag_stack.append("strong")
+                    return
+                if stype == "em":
+                    self._write("<em>")
+                    self.tag_stack.append("em")
+                    return
+                if stype == "code" or stype == "inline-code":
+                    self._write("<code>")
+                    self.tag_stack.append("code")
+                    return
+                if stype == "a" or stype == "block-ref":
+                    href = attr_dict.get("data-href", "")
+                    self._write(f'<a href="{href}">')
+                    self.tag_stack.append("a")
+                    return
+                # Pass through other spans
+                self._write("<span>")
+                self.tag_stack.append("span")
+                return
+
+            if tag == "a":
+                href = attr_dict.get("href", "")
+                # Skip pdf-outline links
+                if href.startswith("pdf-outline://"):
+                    self.skip_depth += 1
+                    return
+                self._write(f'<a href="{href}">')
+                self.tag_stack.append("a")
+                return
+
+            if tag == "img":
+                src = attr_dict.get("src", "")
+                alt = attr_dict.get("alt", "")
+                self._write(f'<img src="{src}" alt="{alt}">')
+                return
+
+            if tag == "table":
+                self._write("<table>")
+                self.tag_stack.append("table")
+                return
+            if tag in ("thead", "tbody", "tr", "th", "td"):
+                extra = ""
+                if tag in ("th", "td"):
+                    colspan = attr_dict.get("colspan")
+                    rowspan = attr_dict.get("rowspan")
+                    if colspan:
+                        extra += f' colspan="{colspan}"'
+                    if rowspan:
+                        extra += f' rowspan="{rowspan}"'
+                self._write(f"<{tag}{extra}>")
+                self.tag_stack.append(tag)
+                return
+
+            if tag == "br":
+                self._write("<br>")
+                return
+
+            # Contenteditable divs — just pass through content
+            if tag == "div":
+                self.tag_stack.append("_div")
+                return
+
+            # Default: pass through
+            self.tag_stack.append(f"_{tag}")
+
+        def handle_endtag(self, tag: str) -> None:
+            if self.skip_depth > 0:
+                self.skip_depth -= 1
+                return
+
+            if not self.tag_stack:
+                return
+
+            mapped = self.tag_stack.pop()
+
+            if mapped == "code-block":
+                self._write("</code></pre>")
+            elif mapped == "hr":
+                pass  # self-closing
+            elif mapped.startswith("_"):
+                pass  # skip unmapped wrappers
+            else:
+                self._write(f"</{mapped}>")
+
+        def handle_data(self, data: str) -> None:
+            self._write(data)
+
+        def handle_entityref(self, name: str) -> None:
+            self._write(f"&{name};")
+
+        def handle_charref(self, name: str) -> None:
+            self._write(f"&#{name};")
+
+        def get_result(self) -> str:
+            return self.out.getvalue()
+
+    converter = ProtyleConverter()
+    converter.feed(protyle_html)
+    body = converter.get_result()
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body>{body}</body></html>"""
 
 
 def _page_css(page_size: str, orientation: str) -> str:
@@ -166,13 +308,14 @@ def _render_pdf(
     page_size: str,
     image_quality: int,
 ) -> bytes:
-    """Convert HTML to PDF bytes using WeasyPrint."""
+    """Convert Protyle HTML to PDF bytes using WeasyPrint."""
     from weasyprint import CSS, HTML
 
+    clean_html = _protyle_to_html(html)
     css = _page_css(page_size, orientation)
     try:
         pdf_bytes = HTML(
-            string=html,
+            string=clean_html,
             base_url=settings.siyuan_url,
         ).write_pdf(
             stylesheets=[CSS(string=css)],
