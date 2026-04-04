@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -176,7 +175,8 @@ def test_page_css_landscape_swaps():
 
 @pytest.mark.asyncio
 async def test_export_pdf_default(mock_sy, mock_settings, mock_render):
-    """Default export returns name, pdf_base64, sha256 with valid PDF."""
+    """Default export returns a File and a text summary."""
+    from fastmcp.utilities.types import File
     from mcp_siyuan.tools.export import siyuan_export_pdf
 
     mock_sy.call.return_value = {
@@ -184,11 +184,14 @@ async def test_export_pdf_default(mock_sy, mock_settings, mock_render):
         "content": SAMPLE_HTML,
     }
     result = await siyuan_export_pdf(id="20210808180320-fqgskfj")
-    assert result["name"] == "Test Doc"
-    assert "pdf_base64" in result
-    assert "sha256" in result
-    pdf_bytes = base64.b64decode(result["pdf_base64"])
-    assert pdf_bytes[:5] == b"%PDF-"
+    assert isinstance(result, list)
+    assert len(result) == 2
+    # First item is a File
+    assert isinstance(result[0], File)
+    assert result[0]._name == "Test Doc.pdf"
+    # Second item is a text summary
+    assert "Test Doc.pdf" in result[1]
+    assert "sha256:" in result[1]
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +215,7 @@ async def test_export_pdf_invalid_id():
 
 @pytest.mark.asyncio
 async def test_export_pdf_large_file_warning(mock_sy, mock_settings):
-    """PDF > 10MB includes a warning field."""
+    """PDF > 10MB includes a warning in the summary text."""
     from mcp_siyuan.tools.export import _LARGE_PDF_THRESHOLD, siyuan_export_pdf
 
     mock_sy.call.return_value = {
@@ -222,8 +225,8 @@ async def test_export_pdf_large_file_warning(mock_sy, mock_settings):
     fake_pdf = b"%PDF-1.4 " + b"\x00" * (_LARGE_PDF_THRESHOLD + 1)
     with patch("mcp_siyuan.tools.export._render_pdf", return_value=fake_pdf):
         result = await siyuan_export_pdf(id="20210808180320-fqgskfj")
-    assert "warning" in result
-    assert "large" in result["warning"].lower()
+    summary = result[1]
+    assert "large" in summary.lower()
 
 
 # ---------------------------------------------------------------------------

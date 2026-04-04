@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import logging
 import re
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
+from fastmcp.utilities.types import File
 from pydantic import Field
 
 from mcp_siyuan.client import SiYuanError, sy
@@ -122,11 +122,10 @@ async def siyuan_export_pdf(
         int,
         Field(ge=1, le=100, description="JPEG quality for embedded images (1-100)"),
     ] = 85,
-) -> dict[str, str]:
+) -> list:
     """Export a SiYuan document as PDF.
 
-    Fetches the document's rendered HTML from SiYuan and converts it to a
-    styled PDF with configurable page size, orientation, and image quality.
+    Returns the PDF as a downloadable file alongside a text summary.
 
     Known limitation: Math blocks (KaTeX/MathJax) render as raw LaTeX text
     because the PDF renderer does not execute JavaScript. Use SiYuan's
@@ -152,20 +151,16 @@ async def siyuan_export_pdf(
         )
 
     pdf_bytes = _render_pdf(html, orientation, page_size, image_quality)
-
-    pdf_b64 = base64.b64encode(pdf_bytes).decode()
     pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    size_kb = len(pdf_bytes) // 1024
 
-    result: dict[str, str] = {
-        "name": name,
-        "pdf_base64": pdf_b64,
-        "sha256": pdf_sha256,
-    }
+    result: list = [
+        File(data=pdf_bytes, format="pdf", name=f"{name}.pdf"),
+    ]
 
+    summary = f"Generated PDF: {name}.pdf ({size_kb} KB, {page_size} {orientation}, sha256: {pdf_sha256})"
     if len(pdf_bytes) > _LARGE_PDF_THRESHOLD:
-        result["warning"] = (
-            f"PDF is large ({len(pdf_bytes) // (1024 * 1024)} MB). "
-            "Consider reducing image_quality for a smaller file."
-        )
+        summary += f"\n⚠ PDF is large ({len(pdf_bytes) // (1024 * 1024)} MB). Consider reducing image_quality."
 
+    result.append(summary)
     return result
