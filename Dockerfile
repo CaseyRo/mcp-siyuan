@@ -6,7 +6,7 @@ COPY pyproject.toml README.md ./
 COPY mcp_siyuan/ ./mcp_siyuan/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
+    libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
     libffi8 libcairo2 fonts-noto \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir . \
