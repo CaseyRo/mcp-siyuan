@@ -122,7 +122,7 @@ async def siyuan_export_pdf(
         int,
         Field(ge=1, le=100, description="JPEG quality for embedded images (1-100)"),
     ] = 85,
-) -> list:
+):
     """Export a SiYuan document as PDF.
 
     Returns the PDF as a downloadable file alongside a text summary.
