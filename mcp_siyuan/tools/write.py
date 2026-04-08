@@ -16,8 +16,8 @@ def _wrap_result(result: Any) -> dict[str, Any]:
     return {"ok": True}
 
 
-async def siyuan_create_notebook(name: str) -> dict[str, Any]:
-    """Create a new notebook in SiYuan.
+async def create_notebook(name: str) -> dict[str, Any]:
+    """[notes] Create a new notebook in SiYuan.
 
     Args:
         name: Name for the new notebook.
@@ -29,8 +29,8 @@ async def siyuan_create_notebook(name: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {"ok": True}
 
 
-async def siyuan_rename_notebook(notebook: str, name: str) -> dict[str, Any]:
-    """Rename an existing notebook.
+async def rename_notebook(notebook: str, name: str) -> dict[str, Any]:
+    """[notes] Rename an existing notebook.
 
     Args:
         notebook: Notebook ID to rename.
@@ -44,8 +44,8 @@ async def siyuan_rename_notebook(notebook: str, name: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def siyuan_remove_notebook(notebook: str) -> dict[str, Any]:
-    """Remove a notebook and all its documents.
+async def remove_notebook(notebook: str) -> dict[str, Any]:
+    """[notes] Remove a notebook and all its documents.
 
     This permanently removes the notebook. Use with caution — deletion cannot
     be undone via the API (only via SiYuan's in-app undo).
@@ -60,12 +60,12 @@ async def siyuan_remove_notebook(notebook: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def siyuan_create_document(
+async def create_document(
     notebook: str, path: str, markdown: str = ""
 ) -> str:
-    """Create a new document in a SiYuan notebook.
+    """[notes] Create a new document in a SiYuan notebook.
 
-    Use siyuan_list_notebooks first to get notebook IDs.
+    Use list_notebooks first to get notebook IDs.
     Only create documents in notebooks with closed=false.
 
     Args:
@@ -85,10 +85,10 @@ async def siyuan_create_document(
     return data if isinstance(data, str) else str(data)
 
 
-async def siyuan_update_block(
+async def update_block(
     id: str, data: str, data_type: Literal["markdown", "dom"] = "markdown"
 ) -> dict[str, Any]:
-    """Update an existing block's content.
+    """[notes] Update an existing block's content.
 
     Args:
         id: The block ID to update.
@@ -104,7 +104,7 @@ async def siyuan_update_block(
     return _wrap_result(result)
 
 
-async def siyuan_insert_block(
+async def insert_block(
     data: str,
     position: Literal["after", "before", "child"] = "after",
     anchor_id: str = "",
@@ -114,7 +114,7 @@ async def siyuan_insert_block(
     next_id: str = "",
     parent_id: str = "",
 ) -> dict[str, Any]:
-    """Insert a new block relative to an anchor block.
+    """[notes] Insert a new block relative to an anchor block.
 
     Args:
         data: Block content (markdown or DOM).
@@ -146,10 +146,10 @@ async def siyuan_insert_block(
     return _wrap_result(result)
 
 
-async def siyuan_append_block(
+async def append_block(
     parent_id: str, data: str, data_type: Literal["markdown", "dom"] = "markdown"
 ) -> dict[str, Any]:
-    """Append content to the end of a document or container block.
+    """[notes] Append content to the end of a document or container block.
 
     Args:
         parent_id: The document or container block ID to append to.
@@ -165,8 +165,8 @@ async def siyuan_append_block(
     return _wrap_result(result)
 
 
-async def siyuan_delete_block(id: str) -> dict[str, Any]:
-    """Delete a block by ID.
+async def delete_block(id: str) -> dict[str, Any]:
+    """[notes] Delete a block by ID.
 
     This permanently removes the block. Use with caution — deletion cannot
     be undone via the API (only via SiYuan's in-app undo).
@@ -178,8 +178,8 @@ async def siyuan_delete_block(id: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def siyuan_set_block_attrs(id: str, attrs: dict[str, str]) -> dict[str, Any]:
-    """Set attributes on a block.
+async def set_block_attrs(id: str, attrs: dict[str, str]) -> dict[str, Any]:
+    """[notes] Set attributes on a block.
 
     Args:
         id: The block ID.
@@ -193,8 +193,8 @@ async def siyuan_set_block_attrs(id: str, attrs: dict[str, str]) -> dict[str, An
     return result if isinstance(result, dict) else {"ok": True}
 
 
-async def siyuan_move_doc(from_ids: list[str], to_id: str) -> dict[str, Any]:
-    """Move one or more documents to a new parent document or notebook.
+async def move_doc(from_ids: list[str], to_id: str) -> dict[str, Any]:
+    """[notes] Move one or more documents to a new parent document or notebook.
 
     Args:
         from_ids: List of document IDs to move.
@@ -208,8 +208,8 @@ async def siyuan_move_doc(from_ids: list[str], to_id: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def siyuan_rename_doc(id: str, title: str) -> dict[str, Any]:
-    """Rename a document without moving it.
+async def rename_doc(id: str, title: str) -> dict[str, Any]:
+    """[notes] Rename a document without moving it.
 
     Args:
         id: The document ID to rename.
@@ -223,10 +223,10 @@ async def siyuan_rename_doc(id: str, title: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def siyuan_move_block(
+async def move_block(
     id: str, parent_id: str = "", previous_id: str = ""
 ) -> dict[str, Any]:
-    """Move a block to a new position.
+    """[notes] Move a block to a new position.
 
     At least one of parent_id or previous_id must be provided.
     If both are given, previous_id takes precedence (SiYuan API behaviour).
@@ -247,8 +247,8 @@ async def siyuan_move_block(
     return _wrap_result(result)
 
 
-async def siyuan_daily_note(notebook: str = "") -> str:
-    """Create or open today's daily note in a notebook.
+async def daily_note(notebook: str = "") -> str:
+    """[notes] Create or open today's daily note in a notebook.
 
     Args:
         notebook: Notebook ID. If empty, uses the first open notebook.

@@ -329,7 +329,7 @@ def _render_pdf(
     return pdf_bytes
 
 
-async def siyuan_export_pdf(
+async def export_pdf(
     id: str,
     orientation: Annotated[
         Literal["portrait", "landscape"],
@@ -344,7 +344,7 @@ async def siyuan_export_pdf(
         Field(ge=1, le=100, description="JPEG quality for embedded images (1-100)"),
     ] = 85,
 ):
-    """Export a SiYuan document as PDF.
+    """[notes] Export a SiYuan document as PDF.
 
     Returns the PDF as a downloadable file alongside a text summary.
 

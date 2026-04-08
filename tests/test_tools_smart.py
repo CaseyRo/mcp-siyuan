@@ -15,13 +15,13 @@ def mock_sy():
 @pytest.mark.asyncio
 async def test_get_recent_docs(mock_sy):
     """get_recent_docs returns recent documents."""
-    from mcp_siyuan.tools.smart import siyuan_get_recent_docs
+    from mcp_siyuan.tools.smart import get_recent_docs
 
     mock_sy.call.return_value = [
         {"id": "d1", "title": "Meeting Notes", "box": "nb1", "hpath": "/notes", "updated": "20260320"},
         {"id": "d2", "title": "TODO List", "box": "nb1", "hpath": "/tasks", "updated": "20260319"},
     ]
-    result = await siyuan_get_recent_docs(limit=5)
+    result = await get_recent_docs(limit=5)
     assert len(result) == 2
     assert result[0]["title"] == "Meeting Notes"
 
@@ -29,10 +29,10 @@ async def test_get_recent_docs(mock_sy):
 @pytest.mark.asyncio
 async def test_get_recent_docs_filtered_by_notebook(mock_sy):
     """get_recent_docs filters by notebook when provided."""
-    from mcp_siyuan.tools.smart import siyuan_get_recent_docs
+    from mcp_siyuan.tools.smart import get_recent_docs
 
     mock_sy.call.return_value = []
-    await siyuan_get_recent_docs(notebook="nb1")
+    await get_recent_docs(notebook="nb1")
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "nb1" in stmt
 
@@ -40,12 +40,12 @@ async def test_get_recent_docs_filtered_by_notebook(mock_sy):
 @pytest.mark.asyncio
 async def test_find_tasks_open(mock_sy):
     """find_tasks returns open tasks with doc_title."""
-    from mcp_siyuan.tools.smart import siyuan_find_tasks
+    from mcp_siyuan.tools.smart import find_tasks
 
     mock_sy.call.return_value = [
         {"id": "t1", "content": "Buy groceries", "box": "nb1", "hpath": "/daily/2026-03-20", "root_id": "r1", "updated": "20260320", "doc_title": "Daily Note"},
     ]
-    result = await siyuan_find_tasks()
+    result = await find_tasks()
     assert len(result) == 1
     assert result[0]["content"] == "Buy groceries"
     assert result[0]["doc_title"] == "Daily Note"
@@ -57,10 +57,10 @@ async def test_find_tasks_open(mock_sy):
 @pytest.mark.asyncio
 async def test_find_tasks_checked(mock_sy):
     """find_tasks can return completed tasks."""
-    from mcp_siyuan.tools.smart import siyuan_find_tasks
+    from mcp_siyuan.tools.smart import find_tasks
 
     mock_sy.call.return_value = []
-    await siyuan_find_tasks(checked=True)
+    await find_tasks(checked=True)
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "'d'" in stmt  # checked subtype
 
@@ -68,10 +68,10 @@ async def test_find_tasks_checked(mock_sy):
 @pytest.mark.asyncio
 async def test_find_tasks_scoped_to_notebook(mock_sy):
     """find_tasks filters by notebook."""
-    from mcp_siyuan.tools.smart import siyuan_find_tasks
+    from mcp_siyuan.tools.smart import find_tasks
 
     mock_sy.call.return_value = []
-    await siyuan_find_tasks(notebook="nb1")
+    await find_tasks(notebook="nb1")
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "nb1" in stmt
 
@@ -79,7 +79,7 @@ async def test_find_tasks_scoped_to_notebook(mock_sy):
 @pytest.mark.asyncio
 async def test_get_backlinks(mock_sy):
     """get_backlinks returns referencing blocks with doc_title."""
-    from mcp_siyuan.tools.smart import siyuan_get_backlinks
+    from mcp_siyuan.tools.smart import get_backlinks
 
     mock_sy.call.return_value = {
         "backlinks": [
@@ -92,7 +92,7 @@ async def test_get_backlinks(mock_sy):
             }
         ]
     }
-    result = await siyuan_get_backlinks(id="doc1")
+    result = await get_backlinks(id="doc1")
     assert len(result) == 2
     assert result[0]["content"] == "See also [[doc]]"
     assert result[0]["doc_title"] == "Notes Document"
@@ -101,17 +101,17 @@ async def test_get_backlinks(mock_sy):
 @pytest.mark.asyncio
 async def test_get_backlinks_empty(mock_sy):
     """get_backlinks returns empty list when no refs."""
-    from mcp_siyuan.tools.smart import siyuan_get_backlinks
+    from mcp_siyuan.tools.smart import get_backlinks
 
     mock_sy.call.return_value = {"backlinks": []}
-    result = await siyuan_get_backlinks(id="orphan")
+    result = await get_backlinks(id="orphan")
     assert result == []
 
 
 @pytest.mark.asyncio
 async def test_get_tags(mock_sy):
     """get_tags flattens nested tag tree."""
-    from mcp_siyuan.tools.smart import siyuan_get_tags
+    from mcp_siyuan.tools.smart import get_tags
 
     mock_sy.call.return_value = {
         "tags": [
@@ -121,7 +121,7 @@ async def test_get_tags(mock_sy):
             {"label": "wishlist", "count": 2, "tags": []},
         ]
     }
-    result = await siyuan_get_tags()
+    result = await get_tags()
     assert len(result) == 3
     assert {"tag": "cars", "count": 5} in result
     assert {"tag": "cars/porsche", "count": 3} in result
@@ -131,22 +131,22 @@ async def test_get_tags(mock_sy):
 @pytest.mark.asyncio
 async def test_get_tags_empty(mock_sy):
     """get_tags returns empty list when no tags."""
-    from mcp_siyuan.tools.smart import siyuan_get_tags
+    from mcp_siyuan.tools.smart import get_tags
 
     mock_sy.call.return_value = {"tags": []}
-    result = await siyuan_get_tags()
+    result = await get_tags()
     assert result == []
 
 
 @pytest.mark.asyncio
 async def test_search_by_tag(mock_sy):
     """search_by_tag finds blocks with the given tag."""
-    from mcp_siyuan.tools.smart import siyuan_search_by_tag
+    from mcp_siyuan.tools.smart import search_by_tag
 
     mock_sy.call.return_value = [
         {"id": "b1", "content": "911 GT3 RS", "type": "p", "box": "nb1", "hpath": "/cars", "updated": "20260320"},
     ]
-    result = await siyuan_search_by_tag(tag="porsche")
+    result = await search_by_tag(tag="porsche")
     assert len(result) == 1
     assert result[0]["content"] == "911 GT3 RS"
     stmt = mock_sy.call.call_args.kwargs["stmt"]
@@ -156,17 +156,17 @@ async def test_search_by_tag(mock_sy):
 @pytest.mark.asyncio
 async def test_search_by_tag_rejects_injection(mock_sy):
     """search_by_tag rejects SQL injection attempts."""
-    from mcp_siyuan.tools.smart import siyuan_search_by_tag
+    from mcp_siyuan.tools.smart import search_by_tag
 
     with pytest.raises(ValueError, match="Unsafe characters"):
-        await siyuan_search_by_tag(tag="'; DROP TABLE blocks; --")
+        await search_by_tag(tag="'; DROP TABLE blocks; --")
     mock_sy.call.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_get_block_children(mock_sy):
     """get_block_children returns tree structure using batch queries."""
-    from mcp_siyuan.tools.smart import siyuan_get_block_children
+    from mcp_siyuan.tools.smart import get_block_children
 
     call_count = 0
     async def mock_call(endpoint, **kwargs):
@@ -186,7 +186,7 @@ async def test_get_block_children(mock_sy):
         return None
 
     mock_sy.call = mock_call
-    result = await siyuan_get_block_children(id="doc1", depth=2)
+    result = await get_block_children(id="doc1", depth=2)
     assert result["id"] == "doc1"
     assert result["type"] == "d"
     assert len(result["children"]) == 2
@@ -199,7 +199,7 @@ async def test_get_block_children(mock_sy):
 @pytest.mark.asyncio
 async def test_search_with_context(mock_sy):
     """search_with_context returns results with surrounding blocks."""
-    from mcp_siyuan.tools.smart import siyuan_search_with_context
+    from mcp_siyuan.tools.smart import search_with_context
 
     call_count = 0
     async def mock_call(endpoint, **kwargs):
@@ -220,7 +220,7 @@ async def test_search_with_context(mock_sy):
         return None
 
     mock_sy.call = mock_call
-    result = await siyuan_search_with_context(query="Porsche", context_blocks=1)
+    result = await search_with_context(query="Porsche", context_blocks=1)
     assert len(result) == 1
     assert result[0]["content"] == "Porsche 911"
     assert "context" in result[0]
@@ -230,14 +230,14 @@ async def test_search_with_context(mock_sy):
 @pytest.mark.asyncio
 async def test_search_with_context_no_context(mock_sy):
     """search_with_context works with context_blocks=0."""
-    from mcp_siyuan.tools.smart import siyuan_search_with_context
+    from mcp_siyuan.tools.smart import search_with_context
 
     mock_sy.call.return_value = {
         "blocks": [
             {"id": "b1", "content": "test", "type": "p", "hPath": "/", "box": "nb1", "rootID": "r1"},
         ]
     }
-    result = await siyuan_search_with_context(query="test", context_blocks=0)
+    result = await search_with_context(query="test", context_blocks=0)
     assert len(result) == 1
     assert "context" not in result[0]
 
@@ -245,7 +245,7 @@ async def test_search_with_context_no_context(mock_sy):
 @pytest.mark.asyncio
 async def test_capture_task(mock_sy):
     """capture_task creates daily note and appends task."""
-    from mcp_siyuan.tools.smart import siyuan_capture_task
+    from mcp_siyuan.tools.smart import capture_task
 
     call_count = 0
     async def mock_call(endpoint, **kwargs):
@@ -261,7 +261,7 @@ async def test_capture_task(mock_sy):
         return None
 
     mock_sy.call = mock_call
-    result = await siyuan_capture_task(text="Buy groceries")
+    result = await capture_task(text="Buy groceries")
     assert result["ok"] is True
     assert result["daily_note_id"] == "daily-id-123"
     assert result["task"] == "Buy groceries"
@@ -270,7 +270,7 @@ async def test_capture_task(mock_sy):
 @pytest.mark.asyncio
 async def test_capture_task_with_notebook(mock_sy):
     """capture_task skips notebook lookup when provided."""
-    from mcp_siyuan.tools.smart import siyuan_capture_task
+    from mcp_siyuan.tools.smart import capture_task
 
     calls = []
     async def mock_call(endpoint, **kwargs):
@@ -282,7 +282,7 @@ async def test_capture_task_with_notebook(mock_sy):
         return None
 
     mock_sy.call = mock_call
-    result = await siyuan_capture_task(text="Do stuff", notebook="nb2")
+    result = await capture_task(text="Do stuff", notebook="nb2")
     assert result["ok"] is True
     assert "/api/notebook/lsNotebooks" not in calls
 
@@ -290,14 +290,14 @@ async def test_capture_task_with_notebook(mock_sy):
 @pytest.mark.asyncio
 async def test_get_document_outline(mock_sy):
     """get_document_outline returns headings only."""
-    from mcp_siyuan.tools.smart import siyuan_get_document_outline
+    from mcp_siyuan.tools.smart import get_document_outline
 
     mock_sy.call.return_value = [
         {"id": "h1", "content": "Introduction", "level": "h1", "sort": 0},
         {"id": "h2", "content": "Methods", "level": "h2", "sort": 10},
         {"id": "h3", "content": "Results", "level": "h2", "sort": 20},
     ]
-    result = await siyuan_get_document_outline(id="doc1")
+    result = await get_document_outline(id="doc1")
     assert len(result) == 3
     assert result[0]["content"] == "Introduction"
     stmt = mock_sy.call.call_args.kwargs["stmt"]

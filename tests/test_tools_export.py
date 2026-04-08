@@ -169,7 +169,7 @@ def test_page_css_landscape_swaps():
 
 
 # ---------------------------------------------------------------------------
-# siyuan_export_pdf — default call (mocked rendering)
+# export_pdf — default call (mocked rendering)
 # ---------------------------------------------------------------------------
 
 
@@ -177,13 +177,13 @@ def test_page_css_landscape_swaps():
 async def test_export_pdf_default(mock_sy, mock_settings, mock_render):
     """Default export returns a File and a text summary."""
     from fastmcp.utilities.types import File
-    from mcp_siyuan.tools.export import siyuan_export_pdf
+    from mcp_siyuan.tools.export import export_pdf
 
     mock_sy.call.return_value = {
         "name": "Test Doc",
         "content": SAMPLE_HTML,
     }
-    result = await siyuan_export_pdf(id="20210808180320-fqgskfj")
+    result = await export_pdf(id="20210808180320-fqgskfj")
     assert isinstance(result, list)
     assert len(result) == 2
     # First item is a File
@@ -202,10 +202,10 @@ async def test_export_pdf_default(mock_sy, mock_settings, mock_render):
 @pytest.mark.asyncio
 async def test_export_pdf_invalid_id():
     """Invalid document ID format raises ValueError."""
-    from mcp_siyuan.tools.export import siyuan_export_pdf
+    from mcp_siyuan.tools.export import export_pdf
 
     with pytest.raises(ValueError, match="Invalid SiYuan block ID"):
-        await siyuan_export_pdf(id="not-a-valid-id")
+        await export_pdf(id="not-a-valid-id")
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +216,7 @@ async def test_export_pdf_invalid_id():
 @pytest.mark.asyncio
 async def test_export_pdf_large_file_warning(mock_sy, mock_settings):
     """PDF > 10MB includes a warning in the summary text."""
-    from mcp_siyuan.tools.export import _LARGE_PDF_THRESHOLD, siyuan_export_pdf
+    from mcp_siyuan.tools.export import _LARGE_PDF_THRESHOLD, export_pdf
 
     mock_sy.call.return_value = {
         "name": "Big Doc",
@@ -224,7 +224,7 @@ async def test_export_pdf_large_file_warning(mock_sy, mock_settings):
     }
     fake_pdf = b"%PDF-1.4 " + b"\x00" * (_LARGE_PDF_THRESHOLD + 1)
     with patch("mcp_siyuan.tools.export._render_pdf", return_value=fake_pdf):
-        result = await siyuan_export_pdf(id="20210808180320-fqgskfj")
+        result = await export_pdf(id="20210808180320-fqgskfj")
     summary = result[1]
     assert "large" in summary.lower()
 
@@ -321,7 +321,7 @@ def test_check_url_blocks_metadata():
 @pytest.mark.asyncio
 async def test_export_pdf_html_size_cap(mock_sy, mock_settings):
     """Oversized HTML response raises before reaching WeasyPrint."""
-    from mcp_siyuan.tools.export import _MAX_HTML_BYTES, siyuan_export_pdf
+    from mcp_siyuan.tools.export import _MAX_HTML_BYTES, export_pdf
 
     oversized_html = "x" * (_MAX_HTML_BYTES + 1)
     mock_sy.call.return_value = {
@@ -329,7 +329,7 @@ async def test_export_pdf_html_size_cap(mock_sy, mock_settings):
         "content": oversized_html,
     }
     with pytest.raises(ValueError, match="too large"):
-        await siyuan_export_pdf(id="20210808180320-fqgskfj")
+        await export_pdf(id="20210808180320-fqgskfj")
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ async def test_export_pdf_html_size_cap(mock_sy, mock_settings):
 @pytest.mark.asyncio
 async def test_export_pdf_weasyprint_error_wrapped(mock_sy, mock_settings):
     """WeasyPrint errors are wrapped — caller gets generic message."""
-    from mcp_siyuan.tools.export import siyuan_export_pdf
+    from mcp_siyuan.tools.export import export_pdf
 
     mock_sy.call.return_value = {
         "name": "Bad Doc",
@@ -351,7 +351,7 @@ async def test_export_pdf_weasyprint_error_wrapped(mock_sy, mock_settings):
         side_effect=SiYuanError("PDF rendering failed. Check server logs for details."),
     ):
         with pytest.raises(SiYuanError, match="PDF rendering failed"):
-            await siyuan_export_pdf(id="20210808180320-fqgskfj")
+            await export_pdf(id="20210808180320-fqgskfj")
 
 
 # ---------------------------------------------------------------------------
