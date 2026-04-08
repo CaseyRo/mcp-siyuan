@@ -18,11 +18,11 @@ services:
     volumes:
       - fastmcp-data:/data/fastmcp
     networks:
-      - siyuan_default
+      - siyuan-cluster_default
 
 volumes:
   fastmcp-data:
 
 networks:
-  siyuan_default:
+  siyuan-cluster_default:
     external: true
