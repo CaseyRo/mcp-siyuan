@@ -74,6 +74,8 @@ async def search(
 ) -> list[dict[str, Any]]:
     """[notes] Quick full-text search across all SiYuan content (no surrounding context).
 
+    Disambiguation: For notes/documents → siyuan. For social media posts → zernio. For blog/writing content → writings.
+
     For richer results with surrounding blocks, use search_with_context instead.
 
     Args:
