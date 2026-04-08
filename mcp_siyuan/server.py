@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
 from fastmcp import FastMCP
 from mcp.types import Icon
 
-from mcp_siyuan.auth import create_auth
+from mcp_siyuan.auth import BearerTokenVerifier
 from mcp_siyuan.config import settings
 from mcp_siyuan.tools.read import (
     siyuan_get_block,
@@ -43,28 +45,13 @@ from mcp_siyuan.tools.write import (
     siyuan_update_block,
 )
 
-def _build_auth():
-    """Build auth provider if running in HTTP mode."""
-    if settings.transport != "http":
-        return None
-    if not settings.keycloak_client_secret:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "KEYCLOAK_CLIENT_SECRET is empty — OAuth/OIDC auth disabled"
-        )
-        return None
-    return create_auth(
-        base_url=settings.base_url,
-        keycloak_issuer=settings.keycloak_issuer,
-        keycloak_client_id=settings.keycloak_client_id,
-        keycloak_client_secret=settings.keycloak_client_secret,
-    )
+_api_key = os.getenv("MCP_API_KEY", "")
+_auth = BearerTokenVerifier(api_key=_api_key) if _api_key else None
 
 
 mcp = FastMCP(
     "mcp-siyuan",
-    auth=_build_auth(),
+    auth=_auth,
     icons=[
         Icon(
             src="https://b3log.org/images/brand/siyuan-128.png",

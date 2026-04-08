@@ -23,15 +23,8 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
-    # MCP server auth
-    mcp_siyuan_api_key: str = ""
-    mcp_siyuan_public_url: str = ""
-
-    # Keycloak OIDC
-    keycloak_issuer: str = "https://auth.cdit-works.de/realms/cdit-mcp"
-    keycloak_audience: str = "mcp-siyuan"
-    keycloak_client_id: str = "mcp-siyuan"
-    keycloak_client_secret: str = ""
+    # Bearer token auth
+    mcp_api_key: str = ""
 
     model_config = {"env_prefix": "", "case_sensitive": False}
 
@@ -51,13 +44,5 @@ class Settings(BaseSettings):
                 "SIYUAN_TOKEN is not set. Requests to SiYuan will be unauthenticated.",
                 stacklevel=2,
             )
-
-    @property
-    def base_url(self) -> str:
-        """Public URL for OAuth metadata, or computed from host:port."""
-        if self.mcp_siyuan_public_url:
-            return self.mcp_siyuan_public_url.rstrip("/")
-        return f"http://{self.host}:{self.port}"
-
 
 settings = Settings()
