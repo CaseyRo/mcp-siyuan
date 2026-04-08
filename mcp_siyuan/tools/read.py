@@ -13,8 +13,8 @@ _ALLOWED_STMT_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
 _MAX_SQL_ROWS = 200
 
 
-async def siyuan_list_notebooks() -> list[dict[str, Any]]:
-    """List all notebooks in the SiYuan workspace.
+async def list_notebooks() -> list[dict[str, Any]]:
+    """[notes] List all notebooks in the SiYuan workspace.
 
     Use this first to discover notebook IDs before creating documents or daily notes.
     Notebooks with closed=true cannot accept new documents.
@@ -26,8 +26,8 @@ async def siyuan_list_notebooks() -> list[dict[str, Any]]:
     return [Notebook(**nb).model_dump() for nb in raw]
 
 
-async def siyuan_sql_query(stmt: str) -> list[dict[str, Any]]:
-    """Execute a read-only SQL SELECT against SiYuan's internal database.
+async def sql_query(stmt: str) -> list[dict[str, Any]]:
+    """[notes] Execute a read-only SQL SELECT against SiYuan's internal database.
 
     Only SELECT statements are permitted. A LIMIT is enforced if not provided.
 
@@ -51,11 +51,11 @@ async def siyuan_sql_query(stmt: str) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
-async def siyuan_get_document(
+async def get_document(
     id: str,
     max_length: Annotated[int, Field(ge=1, le=524288)] = 65536,
 ) -> str:
-    """Get a document's markdown content by its block ID.
+    """[notes] Get a document's markdown content by its block ID.
 
     Args:
         id: The document block ID.
@@ -68,13 +68,13 @@ async def siyuan_get_document(
     return content
 
 
-async def siyuan_search(
+async def search(
     query: str,
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
-    """Quick full-text search across all SiYuan content (no surrounding context).
+    """[notes] Quick full-text search across all SiYuan content (no surrounding context).
 
-    For richer results with surrounding blocks, use siyuan_search_with_context instead.
+    For richer results with surrounding blocks, use search_with_context instead.
 
     Args:
         query: Search query string.
@@ -104,8 +104,8 @@ async def siyuan_search(
 _BLOCK_FIELDS = ("id", "type", "content", "parent_id", "root_id", "box", "hpath", "updated")
 
 
-async def siyuan_get_block(id: str) -> dict[str, Any]:
-    """Get a single block's content and metadata by ID.
+async def get_block(id: str) -> dict[str, Any]:
+    """[notes] Get a single block's content and metadata by ID.
 
     Returns only the essential fields: id, type, content, parent_id,
     root_id, box, hpath, updated.
@@ -125,8 +125,8 @@ async def siyuan_get_block(id: str) -> dict[str, Any]:
     return normalised
 
 
-async def siyuan_get_block_attrs(id: str) -> dict[str, str]:
-    """Get all attributes (system and custom) for a block.
+async def get_block_attrs(id: str) -> dict[str, str]:
+    """[notes] Get all attributes (system and custom) for a block.
 
     Args:
         id: The block ID to retrieve attributes for.

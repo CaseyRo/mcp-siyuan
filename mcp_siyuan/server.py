@@ -10,39 +10,39 @@ from mcp.types import Icon
 from mcp_siyuan.auth import BearerTokenVerifier
 from mcp_siyuan.config import settings
 from mcp_siyuan.tools.read import (
-    siyuan_get_block,
-    siyuan_get_block_attrs,
-    siyuan_get_document,
-    siyuan_list_notebooks,
-    siyuan_search,
-    siyuan_sql_query,
+    get_block,
+    get_block_attrs,
+    get_document,
+    list_notebooks,
+    search,
+    sql_query,
 )
 from mcp_siyuan.tools.smart import (
-    siyuan_capture_task,
-    siyuan_find_tasks,
-    siyuan_get_backlinks,
-    siyuan_get_block_children,
-    siyuan_get_document_outline,
-    siyuan_get_recent_docs,
-    siyuan_get_tags,
-    siyuan_search_by_tag,
-    siyuan_search_with_context,
+    capture_task,
+    find_tasks,
+    get_backlinks,
+    get_block_children,
+    get_document_outline,
+    get_recent_docs,
+    get_tags,
+    search_by_tag,
+    search_with_context,
 )
-from mcp_siyuan.tools.export import siyuan_export_pdf
+from mcp_siyuan.tools.export import export_pdf
 from mcp_siyuan.tools.write import (
-    siyuan_append_block,
-    siyuan_create_document,
-    siyuan_create_notebook,
-    siyuan_daily_note,
-    siyuan_delete_block,
-    siyuan_insert_block,
-    siyuan_move_block,
-    siyuan_move_doc,
-    siyuan_remove_notebook,
-    siyuan_rename_doc,
-    siyuan_rename_notebook,
-    siyuan_set_block_attrs,
-    siyuan_update_block,
+    append_block,
+    create_document,
+    create_notebook,
+    daily_note,
+    delete_block,
+    insert_block,
+    move_block,
+    move_doc,
+    remove_notebook,
+    rename_doc,
+    rename_notebook,
+    set_block_attrs,
+    update_block,
 )
 
 _api_key = os.getenv("MCP_API_KEY", "")
@@ -62,41 +62,41 @@ mcp = FastMCP(
 )
 
 # Tier 1 — Read / Query
-mcp.tool(siyuan_list_notebooks)
-mcp.tool(siyuan_sql_query)
-mcp.tool(siyuan_get_document)
-mcp.tool(siyuan_search)
-mcp.tool(siyuan_get_block)
-mcp.tool(siyuan_get_block_attrs)
+mcp.tool(list_notebooks)
+mcp.tool(sql_query)
+mcp.tool(get_document)
+mcp.tool(search)
+mcp.tool(get_block)
+mcp.tool(get_block_attrs)
 
 # Tier 2 — Write
-mcp.tool(siyuan_create_notebook)
-mcp.tool(siyuan_rename_notebook)
-mcp.tool(siyuan_remove_notebook)
-mcp.tool(siyuan_create_document)
-mcp.tool(siyuan_update_block)
-mcp.tool(siyuan_insert_block)
-mcp.tool(siyuan_append_block)
-mcp.tool(siyuan_delete_block)
-mcp.tool(siyuan_set_block_attrs)
-mcp.tool(siyuan_move_doc)
-mcp.tool(siyuan_rename_doc)
-mcp.tool(siyuan_move_block)
-mcp.tool(siyuan_daily_note)
+mcp.tool(create_notebook)
+mcp.tool(rename_notebook)
+mcp.tool(remove_notebook)
+mcp.tool(create_document)
+mcp.tool(update_block)
+mcp.tool(insert_block)
+mcp.tool(append_block)
+mcp.tool(delete_block)
+mcp.tool(set_block_attrs)
+mcp.tool(move_doc)
+mcp.tool(rename_doc)
+mcp.tool(move_block)
+mcp.tool(daily_note)
 
 # Smart — LLM-ergonomic high-level tools
-mcp.tool(siyuan_get_recent_docs)
-mcp.tool(siyuan_find_tasks)
-mcp.tool(siyuan_get_backlinks)
-mcp.tool(siyuan_get_tags)
-mcp.tool(siyuan_search_by_tag)
-mcp.tool(siyuan_get_block_children)
-mcp.tool(siyuan_search_with_context)
-mcp.tool(siyuan_capture_task)
-mcp.tool(siyuan_get_document_outline)
+mcp.tool(get_recent_docs)
+mcp.tool(find_tasks)
+mcp.tool(get_backlinks)
+mcp.tool(get_tags)
+mcp.tool(search_by_tag)
+mcp.tool(get_block_children)
+mcp.tool(search_with_context)
+mcp.tool(capture_task)
+mcp.tool(get_document_outline)
 
 # Export
-mcp.tool(siyuan_export_pdf)
+mcp.tool(export_pdf)
 
 
 def main() -> None:

@@ -21,11 +21,11 @@ def _sanitize(value: str) -> str:
     return value
 
 
-async def siyuan_get_recent_docs(
+async def get_recent_docs(
     limit: Annotated[int, Field(ge=1, le=50)] = 10,
     notebook: str = "",
 ) -> list[dict[str, Any]]:
-    """Get recently modified documents, newest first.
+    """[notes] Get recently modified documents, newest first.
 
     Great for understanding what the user has been working on lately.
 
@@ -41,13 +41,13 @@ async def siyuan_get_recent_docs(
     return data if isinstance(data, list) else []
 
 
-async def siyuan_find_tasks(
+async def find_tasks(
     notebook: str = "",
     checked: bool = False,
     days: Annotated[int, Field(ge=1, le=365)] = 7,
     limit: Annotated[int, Field(ge=1, le=100)] = 50,
 ) -> list[dict[str, Any]]:
-    """Find task/TODO items across SiYuan notes.
+    """[notes] Find task/TODO items across SiYuan notes.
 
     Searches for task list items (checkbox blocks). Perfect for extracting
     TODOs from daily notes for export to task managers.
@@ -78,8 +78,8 @@ async def siyuan_find_tasks(
     return data if isinstance(data, list) else []
 
 
-async def siyuan_get_backlinks(id: str) -> list[dict[str, Any]]:
-    """Get all blocks that reference (link to) a given block or document.
+async def get_backlinks(id: str) -> list[dict[str, Any]]:
+    """[notes] Get all blocks that reference (link to) a given block or document.
 
     Essential for understanding how content is connected in the knowledge graph.
     Returns each backlink with its document title (doc_title) for context.
@@ -107,8 +107,8 @@ async def siyuan_get_backlinks(id: str) -> list[dict[str, Any]]:
     return results
 
 
-async def siyuan_get_tags() -> list[dict[str, Any]]:
-    """List all tags used across the workspace with their usage count.
+async def get_tags() -> list[dict[str, Any]]:
+    """[notes] List all tags used across the workspace with their usage count.
 
     Useful for discovering how content is organized and finding tag-based entry points.
     """
@@ -132,8 +132,8 @@ async def siyuan_get_tags() -> list[dict[str, Any]]:
     return _flatten(tags)
 
 
-async def siyuan_search_by_tag(tag: str) -> list[dict[str, Any]]:
-    """Find all blocks with a specific tag.
+async def search_by_tag(tag: str) -> list[dict[str, Any]]:
+    """[notes] Find all blocks with a specific tag.
 
     Args:
         tag: The tag to search for (without #). e.g. 'porsche', 'wishlist'.
@@ -150,11 +150,11 @@ async def siyuan_search_by_tag(tag: str) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
-async def siyuan_get_block_children(
+async def get_block_children(
     id: str,
     depth: Annotated[int, Field(ge=1, le=5)] = 2,
 ) -> dict[str, Any]:
-    """Get a block and its child blocks as a tree structure.
+    """[notes] Get a block and its child blocks as a tree structure.
 
     Useful for understanding document outline or navigating into a section.
     Uses a single query per depth level instead of per-child queries.
@@ -206,12 +206,12 @@ async def siyuan_get_block_children(
     }
 
 
-async def siyuan_search_with_context(
+async def search_with_context(
     query: str,
     context_blocks: Annotated[int, Field(ge=0, le=10)] = 2,
     limit: Annotated[int, Field(ge=1, le=50)] = 10,
 ) -> list[dict[str, Any]]:
-    """Search SiYuan and return results with surrounding context blocks.
+    """[notes] Search SiYuan and return results with surrounding context blocks.
 
     Unlike basic search, this returns the blocks before and after each match,
     giving the LLM enough context to understand what was found.
@@ -263,11 +263,11 @@ async def siyuan_search_with_context(
     return results
 
 
-async def siyuan_capture_task(
+async def capture_task(
     text: str,
     notebook: str = "",
 ) -> dict[str, Any]:
-    """Append a new task checkbox to today's daily note.
+    """[notes] Append a new task checkbox to today's daily note.
 
     This is a high-level convenience tool that combines listing notebooks,
     creating/opening the daily note, and appending a task — all in one call.
@@ -312,11 +312,11 @@ async def siyuan_capture_task(
     }
 
 
-async def siyuan_get_document_outline(
+async def get_document_outline(
     id: str,
     limit: Annotated[int, Field(ge=1, le=200)] = 100,
 ) -> list[dict[str, Any]]:
-    """Get the heading outline of a document.
+    """[notes] Get the heading outline of a document.
 
     Returns only heading blocks in order — useful for understanding document
     structure without fetching the full content or making N+1 queries.
