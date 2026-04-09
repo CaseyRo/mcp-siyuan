@@ -109,6 +109,9 @@ _BLOCK_FIELDS = ("id", "type", "content", "parent_id", "root_id", "box", "hpath"
 async def get_block(id: str) -> dict[str, Any]:
     """[notes] Get a single block's content and metadata by ID.
 
+    Returns block content and metadata (id, type, content, parent_id). For custom
+    attributes (memo, alias, bookmark, etc.), use get_block_attrs instead.
+
     Returns only the essential fields: id, type, content, parent_id,
     root_id, box, hpath, updated.
 
@@ -129,6 +132,9 @@ async def get_block(id: str) -> dict[str, Any]:
 
 async def get_block_attrs(id: str) -> dict[str, str]:
     """[notes] Get all attributes (system and custom) for a block.
+
+    Returns system and custom attributes. For block content and markdown,
+    use get_block instead.
 
     Args:
         id: The block ID to retrieve attributes for.
