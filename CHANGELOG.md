@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.4] - 2026-04-18
+
+- chore: sync __init__.__version__ with pyproject (0.2.3)
+
+
 ## [0.2.3] - 2026-04-18
 
 - feat(reliability): FastMCP 3.2.4, stateless_http, /health endpoint, fail-fast auth
