@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.5] - 2026-04-20
+
+- ci(deps): enable Dependabot weekly updates
+
+
 ## [0.2.4] - 2026-04-18
 
 - chore: sync __init__.__version__ with pyproject (0.2.3)
