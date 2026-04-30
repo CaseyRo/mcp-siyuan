@@ -4,6 +4,8 @@ import hmac
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
 
+from mcp_siyuan.observability.context import set_caller
+
 
 class BearerTokenVerifier(TokenVerifier):
     """Verify a static bearer token (API key) using timing-safe comparison."""
@@ -14,5 +16,6 @@ class BearerTokenVerifier(TokenVerifier):
 
     async def verify_token(self, token: str) -> AccessToken | None:
         if hmac.compare_digest(token, self._api_key):
+            set_caller("bearer")
             return AccessToken(token=token, client_id="bearer", scopes=[])
         return None

@@ -6,7 +6,9 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from importlib import metadata as importlib_metadata
 
+import fastmcp
 from fastmcp import FastMCP
 from mcp.types import Icon
 from starlette.requests import Request
@@ -16,6 +18,9 @@ from mcp_siyuan import __version__
 from mcp_siyuan.auth import BearerTokenVerifier
 from mcp_siyuan.client import sy
 from mcp_siyuan.config import settings
+from mcp_siyuan.observability import diag_buffer
+from mcp_siyuan.observability.logging_setup import configure_logging
+from mcp_siyuan.observability.tracing import traced_tool
 from mcp_siyuan.tools.read import (
     get_block,
     get_block_attrs,
@@ -52,7 +57,28 @@ from mcp_siyuan.tools.write import (
     update_block,
 )
 
+configure_logging()
 logger = logging.getLogger(__name__)
+
+
+def _check_fastmcp_version() -> None:
+    """Log FastMCP version at startup; warn loudly on pin mismatch."""
+    expected = "3.2.4"
+    try:
+        installed = importlib_metadata.version("fastmcp")
+    except importlib_metadata.PackageNotFoundError:
+        installed = getattr(fastmcp, "__version__", "unknown")
+    logger.info("fastmcp loaded", extra={"fastmcp_version": installed})
+    if installed != expected:
+        logger.error(
+            "fastmcp version mismatch: expected %s, got %s. Pinning is intentional "
+            "for the No-approval-received RCA.",
+            expected,
+            installed,
+        )
+
+
+_check_fastmcp_version()
 
 _api_key = os.getenv("MCP_API_KEY", "")
 if settings.transport == "http" and not _api_key:
@@ -76,41 +102,41 @@ mcp = FastMCP(
 )
 
 # Tier 1 — Read / Query
-mcp.tool(list_notebooks)
-mcp.tool(sql_query)
-mcp.tool(get_document)
-mcp.tool(search)
-mcp.tool(get_block)
-mcp.tool(get_block_attrs)
+mcp.tool(traced_tool(list_notebooks))
+mcp.tool(traced_tool(sql_query))
+mcp.tool(traced_tool(get_document))
+mcp.tool(traced_tool(search))
+mcp.tool(traced_tool(get_block))
+mcp.tool(traced_tool(get_block_attrs))
 
 # Tier 2 — Write
-mcp.tool(create_notebook)
-mcp.tool(rename_notebook)
-mcp.tool(remove_notebook)
-mcp.tool(create_document)
-mcp.tool(update_block)
-mcp.tool(insert_block)
-mcp.tool(append_block)
-mcp.tool(delete_block)
-mcp.tool(set_block_attrs)
-mcp.tool(move_doc)
-mcp.tool(rename_doc)
-mcp.tool(move_block)
-mcp.tool(daily_note)
+mcp.tool(traced_tool(create_notebook))
+mcp.tool(traced_tool(rename_notebook))
+mcp.tool(traced_tool(remove_notebook))
+mcp.tool(traced_tool(create_document))
+mcp.tool(traced_tool(update_block))
+mcp.tool(traced_tool(insert_block))
+mcp.tool(traced_tool(append_block))
+mcp.tool(traced_tool(delete_block))
+mcp.tool(traced_tool(set_block_attrs))
+mcp.tool(traced_tool(move_doc))
+mcp.tool(traced_tool(rename_doc))
+mcp.tool(traced_tool(move_block))
+mcp.tool(traced_tool(daily_note))
 
 # Smart — LLM-ergonomic high-level tools
-mcp.tool(get_recent_docs)
-mcp.tool(find_tasks)
-mcp.tool(get_backlinks)
-mcp.tool(get_tags)
-mcp.tool(search_by_tag)
-mcp.tool(get_block_children)
-mcp.tool(search_with_context)
-mcp.tool(capture_task)
-mcp.tool(get_document_outline)
+mcp.tool(traced_tool(get_recent_docs))
+mcp.tool(traced_tool(find_tasks))
+mcp.tool(traced_tool(get_backlinks))
+mcp.tool(traced_tool(get_tags))
+mcp.tool(traced_tool(search_by_tag))
+mcp.tool(traced_tool(get_block_children))
+mcp.tool(traced_tool(search_with_context))
+mcp.tool(traced_tool(capture_task))
+mcp.tool(traced_tool(get_document_outline))
 
 # Export
-mcp.tool(export_pdf)
+mcp.tool(traced_tool(export_pdf))
 
 
 # --- Health endpoint + upstream probe -------------------------------------
@@ -144,9 +170,12 @@ async def health_check(request: Request) -> JSONResponse:
     Returns HTTP 200 when upstream is reachable, 503 when not.
     Probe result is cached for UPSTREAM_PROBE_INTERVAL seconds (default 30s)
     so healthcheck polling does not amplify upstream load.
+
+    Pass ?diag=1 to also include a snapshot of the recent-tool-call ring buffer
+    (size SIYUAN_DIAG_BUFFER_SIZE, default 50).
     """
     upstream_ok = await _probe_upstream()
-    payload = {
+    payload: dict = {
         "status": "healthy" if upstream_ok else "degraded",
         "service": "mcp-siyuan",
         "version": __version__,
@@ -155,6 +184,8 @@ async def health_check(request: Request) -> JSONResponse:
             (datetime.now(timezone.utc) - _start_time).total_seconds()
         ),
     }
+    if request.query_params.get("diag") == "1":
+        payload["diag"] = diag_buffer.snapshot()
     return JSONResponse(
         payload, status_code=200 if upstream_ok else 503
     )
