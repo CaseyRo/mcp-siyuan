@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from mcp_siyuan.client import sy
+from mcp_siyuan.idempotency import cache as idempotency_cache
 
 
 def _wrap_result(result: Any) -> dict[str, Any]:
@@ -61,7 +62,10 @@ async def remove_notebook(notebook: str) -> dict[str, Any]:
 
 
 async def create_document(
-    notebook: str, path: str, markdown: str = ""
+    notebook: str,
+    path: str,
+    markdown: str = "",
+    idempotency_key: str | None = None,
 ) -> str:
     """[notes] Create a new document in a SiYuan notebook.
 
@@ -72,21 +76,34 @@ async def create_document(
         notebook: Notebook ID (e.g. '20210817205410-2kvfpfn').
         path: Document path within the notebook (e.g. '/foo/bar').
         markdown: Optional GFM markdown content for the document.
+        idempotency_key: Optional client-supplied key. If provided, replaying
+            the same key within SIYUAN_IDEMPOTENCY_TTL_SECONDS returns the
+            prior result without a new kernel call. Failures are NOT cached.
+            Allowed: ^[A-Za-z0-9_\\-:.]+$, length 1..128.
 
     Returns:
         The ID of the newly created document.
     """
-    data = await sy.call(
-        "/api/filetree/createDocWithMd",
-        notebook=notebook,
-        path=path,
-        markdown=markdown,
+
+    async def _call() -> str:
+        data = await sy.call(
+            "/api/filetree/createDocWithMd",
+            notebook=notebook,
+            path=path,
+            markdown=markdown,
+        )
+        return data if isinstance(data, str) else str(data)
+
+    return await idempotency_cache.with_idempotency(
+        "create_document", idempotency_key, _call
     )
-    return data if isinstance(data, str) else str(data)
 
 
 async def update_block(
-    id: str, data: str, data_type: Literal["markdown", "dom"] = "markdown"
+    id: str,
+    data: str,
+    data_type: Literal["markdown", "dom"] = "markdown",
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """[notes] Update an existing block's content.
 
@@ -94,14 +111,21 @@ async def update_block(
         id: The block ID to update.
         data: New content for the block.
         data_type: Content format — 'markdown' (default) or 'dom'.
+        idempotency_key: Optional replay-cache key (see create_document).
     """
-    result = await sy.call(
-        "/api/block/updateBlock",
-        id=id,
-        data=data,
-        dataType=data_type,
+
+    async def _call() -> dict[str, Any]:
+        result = await sy.call(
+            "/api/block/updateBlock",
+            id=id,
+            data=data,
+            dataType=data_type,
+        )
+        return _wrap_result(result)
+
+    return await idempotency_cache.with_idempotency(
+        "update_block", idempotency_key, _call
     )
-    return _wrap_result(result)
 
 
 async def insert_block(
@@ -113,6 +137,7 @@ async def insert_block(
     previous_id: str = "",
     next_id: str = "",
     parent_id: str = "",
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """[notes] Insert a new block relative to an anchor block.
 
@@ -122,6 +147,7 @@ async def insert_block(
                   'before' (insert before anchor_id), or 'child' (append as child).
         anchor_id: The block ID to position relative to. Required.
         data_type: Content format — 'markdown' (default) or 'dom'.
+        idempotency_key: Optional replay-cache key (see create_document).
     """
     payload: dict[str, Any] = {"data": data, "dataType": data_type}
 
@@ -142,12 +168,20 @@ async def insert_block(
         if parent_id:
             payload["parentID"] = parent_id
 
-    result = await sy.call("/api/block/insertBlock", **payload)
-    return _wrap_result(result)
+    async def _call() -> dict[str, Any]:
+        result = await sy.call("/api/block/insertBlock", **payload)
+        return _wrap_result(result)
+
+    return await idempotency_cache.with_idempotency(
+        "insert_block", idempotency_key, _call
+    )
 
 
 async def append_block(
-    parent_id: str, data: str, data_type: Literal["markdown", "dom"] = "markdown"
+    parent_id: str,
+    data: str,
+    data_type: Literal["markdown", "dom"] = "markdown",
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """[notes] Append content to the end of a document or container block.
 
@@ -155,14 +189,21 @@ async def append_block(
         parent_id: The document or container block ID to append to.
         data: Content to append.
         data_type: Content format — 'markdown' (default) or 'dom'.
+        idempotency_key: Optional replay-cache key (see create_document).
     """
-    result = await sy.call(
-        "/api/block/appendBlock",
-        data=data,
-        dataType=data_type,
-        parentID=parent_id,
+
+    async def _call() -> dict[str, Any]:
+        result = await sy.call(
+            "/api/block/appendBlock",
+            data=data,
+            dataType=data_type,
+            parentID=parent_id,
+        )
+        return _wrap_result(result)
+
+    return await idempotency_cache.with_idempotency(
+        "append_block", idempotency_key, _call
     )
-    return _wrap_result(result)
 
 
 async def delete_block(id: str) -> dict[str, Any]:
@@ -178,19 +219,30 @@ async def delete_block(id: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def set_block_attrs(id: str, attrs: dict[str, str]) -> dict[str, Any]:
+async def set_block_attrs(
+    id: str,
+    attrs: dict[str, str],
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
     """[notes] Set attributes on a block.
 
     Args:
         id: The block ID.
         attrs: Dictionary of attribute key-value pairs (e.g. {'custom-status': 'reviewed'}).
+        idempotency_key: Optional replay-cache key (see create_document).
     """
-    result = await sy.call(
-        "/api/attr/setBlockAttrs",
-        id=id,
-        attrs=attrs,
+
+    async def _call() -> dict[str, Any]:
+        result = await sy.call(
+            "/api/attr/setBlockAttrs",
+            id=id,
+            attrs=attrs,
+        )
+        return result if isinstance(result, dict) else {"ok": True}
+
+    return await idempotency_cache.with_idempotency(
+        "set_block_attrs", idempotency_key, _call
     )
-    return result if isinstance(result, dict) else {"ok": True}
 
 
 async def move_doc(from_ids: list[str], to_id: str) -> dict[str, Any]:
