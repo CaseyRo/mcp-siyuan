@@ -80,6 +80,6 @@
 - [ ] 10.2 Build the Docker image locally and confirm startup logs contain `fastmcp_version` and the formatter emits JSON (deferred — local docker build, run when ready to ship)
 - [ ] 10.3 Run a manual smoke test: call a read tool and a write tool over streamable HTTP, then `GET /health?diag=1` and confirm both calls show up in the buffer with distinct `request_id`s (deferred — needs running server)
 - [x] 10.4 Run `openspec validate --change siyuan-mcp-reliability-fixes` and resolve any issues — `Change 'siyuan-mcp-reliability-fixes' is valid`
-- [ ] 10.5 Bump `pyproject.toml` version and `__init__.__version__` per the project's release-commit pattern (deferred for user confirmation — release action)
-- [ ] 10.6 Open PR against `main`; on merge, Komodo auto-deploys via the existing `km` workflow (deferred for user confirmation — visible to others, triggers deploy)
-- [ ] 10.7 Post-deploy: pull a fresh `request_id` from `/health?diag=1` and paste it into the README runbook example so the docs reference real data (deferred — requires deploy first)
+- [x] 10.5 Bump `__init__.__version__` to 0.2.5 in this commit; the release CI auto-bumps `pyproject.toml` PATCH on merge to main, so both end up at 0.2.5 in sync
+- [x] 10.6 Open PR against `main` — https://github.com/CaseyRo/mcp-siyuan/pull/10 (+1748 / −68 across 41 files); on merge, release CI tags v0.2.5, builds the Docker image to ghcr.io, then Komodo picks up the new image
+- [ ] 10.7 Post-deploy: pull a fresh `request_id` from `/health?diag=1` and paste it into the README runbook example so the docs reference real data (deferred — requires merge + deploy first)
