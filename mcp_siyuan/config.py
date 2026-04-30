@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Bearer token auth
     mcp_api_key: str = ""
 
+    # Observability + reliability (siyuan-mcp-reliability-fixes)
+    siyuan_log_level: str = "INFO"
+    siyuan_diag_buffer_size: int = 50
+    siyuan_idempotency_ttl_seconds: int = 300
+
     model_config = {"env_prefix": "", "case_sensitive": False}
 
     @field_validator("siyuan_url")

@@ -8,12 +8,17 @@ from typing import Any
 import httpx
 
 from mcp_siyuan.config import settings
+from mcp_siyuan.observability.context import set_kernel_status
 
 logger = logging.getLogger(__name__)
 
 
 class SiYuanError(Exception):
     """Raised when the SiYuan kernel returns a non-zero code."""
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class SiYuanClient:
@@ -78,15 +83,20 @@ class SiYuanClient:
             resp = await client.post(endpoint, json=payload)
             resp.raise_for_status()
         except httpx.ConnectError as exc:
+            set_kernel_status("unreachable")
             raise SiYuanError(
                 f"Cannot reach SiYuan at {self._base_url}{endpoint}"
             ) from exc
+        except httpx.HTTPStatusError as exc:
+            set_kernel_status(f"http_{exc.response.status_code}")
+            raise
 
         body = resp.json()
         code = body.get("code", -1)
+        set_kernel_status(str(code))
         if code != 0:
             msg = body.get("msg", "unknown error")
-            raise SiYuanError(f"SiYuan {endpoint}: {msg}")
+            raise SiYuanError(f"SiYuan {endpoint}: {msg}", code=code)
         return body.get("data")
 
     async def close(self) -> None:
