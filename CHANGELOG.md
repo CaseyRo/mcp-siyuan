@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.6] - 2026-04-30
+
+- feat(reliability): correlation IDs, write idempotency, diag endpoint, README rewrite (#10)
+
+
 ## [0.2.5] - 2026-04-20
 
 - ci(deps): enable Dependabot weekly updates
