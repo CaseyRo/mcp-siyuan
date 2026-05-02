@@ -7,10 +7,10 @@
 ```mermaid
 flowchart LR
   Client["Claude Desktop / Claude.ai / n8n / Claude Code"]
-  CFA["Cloudflare Access<br/>(JWT, mcp.cdit-dev.de)"]
-  Portal["Cloudflare MCP Portal<br/>(aggregator)"]
+  CFA["Cloudflare Access<br/>(JWT auth)"]
+  Portal["MCP Portal<br/>(aggregator)"]
   Server["mcp-siyuan<br/>(this repo)"]
-  Kernel["SiYuan kernel<br/>http://siyuan:6806"]
+  Kernel["SiYuan kernel<br/>(internal HTTP endpoint)"]
 
   Client -->|streamable HTTP| CFA
   CFA --> Portal
@@ -20,7 +20,7 @@ flowchart LR
   Client -. stdio .-> Server
 ```
 
-The stdio path is used directly by local Claude Code; the HTTP path traverses Cloudflare Access and the MCP Portal.
+The stdio path is used directly by local Claude Code; the HTTP path traverses an authenticated edge (e.g. Cloudflare Access) and an MCP portal aggregator.
 
 ---
 
@@ -97,7 +97,7 @@ The hand-written catalog is kept honest by `tests/test_readme_tool_catalog.py`, 
 
 ## Transport Architecture
 
-The MCP spec evolved through several wire formats; what runs in production today across the CDIT MCP fleet is **streamable HTTP** (a.k.a. "Streamable HTTP transport") with **stateless** sessions, plus **stdio** for local subprocess clients. We deliberately do not use the older HTTP+SSE split:
+The MCP spec evolved through several wire formats; what we run in production is **streamable HTTP** (a.k.a. "Streamable HTTP transport") with **stateless** sessions, plus **stdio** for local subprocess clients. We deliberately do not use the older HTTP+SSE split:
 
 - **stdio** — used by Claude Code launching `python -m mcp_siyuan` as a subprocess. No auth, no network — IPC over pipes. Set `TRANSPORT=stdio` (the default).
 - **streamable HTTP** — used by Claude Desktop, Claude.ai connectors, and n8n. JSON-RPC over `POST /mcp` with optional server-streamed responses. Set `TRANSPORT=http`. Requires `MCP_API_KEY` (the server fails fast at startup without one).
@@ -131,7 +131,7 @@ All configuration is via environment variables. `mcp_siyuan/config.py` parses th
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `SIYUAN_URL` | `http://siyuan:6806` | Kernel endpoint. Must be `http://` or `https://`. The default assumes the sidecar pattern with the SiYuan container reachable as `siyuan` on the same Docker network. |
+| `SIYUAN_URL` | `http://siyuan:6806` | Kernel endpoint. Must be `http://` or `https://`. The default assumes the sidecar pattern with the SiYuan container reachable on the same Docker network. |
 | `SIYUAN_TOKEN` | *(empty)* | API token from SiYuan settings. The server warns at startup if unset; calls will be unauthenticated. |
 | `UPSTREAM_PROBE_INTERVAL` | `30` | Seconds the `/health` probe result is cached. |
 
@@ -140,11 +140,11 @@ All configuration is via environment variables. `mcp_siyuan/config.py` parses th
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `TRANSPORT` | `stdio` | One of `stdio`, `http`. |
-| `HOST` | `127.0.0.1` | Bind host (HTTP mode). Komodo deploys typically bind `0.0.0.0`. |
+| `HOST` | `127.0.0.1` | Bind host (HTTP mode). Container deploys typically bind `0.0.0.0`. |
 | `PORT` | `8000` | Bind port (HTTP mode). |
-| `MCP_API_KEY` | *(empty)* | Bearer token. **Required** in HTTP mode; server refuses to start without it. Set via the `mcp-api-key` Komodo variable in production. |
+| `MCP_API_KEY` | *(empty)* | Bearer token. **Required** in HTTP mode; server refuses to start without it. Inject via your secret store / orchestrator variables in production. |
 
-### Observability & reliability (added by `siyuan-mcp-reliability-fixes`)
+### Observability & reliability
 
 | Variable | Default | Notes |
 |----------|---------|-------|
@@ -154,7 +154,7 @@ All configuration is via environment variables. `mcp_siyuan/config.py` parses th
 
 ### Where each is set
 
-- **Komodo (production HTTP)** sets `TRANSPORT=http`, `HOST=0.0.0.0`, `PORT=8000`, `MCP_API_KEY=$mcp-api-key`, `SIYUAN_URL=http://siyuan:6806`, `SIYUAN_TOKEN=$siyuan-token`. See `compose.yaml` and `komodo.toml`.
+- **Production (HTTP)** sets `TRANSPORT=http`, `HOST=0.0.0.0`, `PORT=8000`, plus `MCP_API_KEY`, `SIYUAN_URL`, and `SIYUAN_TOKEN` from your secret store. See `compose.yaml` for the container shape.
 - **Local Claude Code (stdio)** reads from your shell env or `.env`. Defaults are correct for the common case; you'll typically only need `SIYUAN_TOKEN`.
 - **CI / tests** ignore most of these — tests mock the kernel client.
 
@@ -162,16 +162,16 @@ All configuration is via environment variables. `mcp_siyuan/config.py` parses th
 
 ## Deployment
 
-Production deploys go through Komodo on Hetzner. The image is built on every push to `main` via the `km` CLI workflow:
+The image builds on every push to `main`. A container orchestrator picks up the new image and rolls it into the stack defined in `compose.yaml`. In our setup:
 
 1. Push to `main`.
-2. Komodo's git-push webhook triggers a build of the `Dockerfile`.
-3. The new image is rolled into the existing stack defined in `compose.yaml`.
-4. Cloudflare Tunnel + Access fronts the service at `mcp.cdit-dev.de`; the MCP Portal aggregator routes `/siyuan/*` to this server.
+2. A git-push webhook triggers a `Dockerfile` build.
+3. The new image replaces the running container.
+4. A Cloudflare Tunnel + Access edge fronts the service; an MCP Portal aggregator routes the `/siyuan/*` namespace to this server.
 
-To deploy: just `git push`. To check status: the Komodo dashboard, or `curl https://mcp.cdit-dev.de/.../health`.
+To check status hit the `/health` endpoint behind your authenticated edge.
 
-The Dockerfile installs Pango, Cairo, and Noto fonts for WeasyPrint. The container has a 512 MB memory limit. Swap is disabled in production.
+The Dockerfile installs Pango, Cairo, and Noto fonts for WeasyPrint. The production container runs with a tight memory limit (see `compose.yaml`).
 
 **Single-replica constraint**: the server keeps the idempotency cache and diag ring buffer in process memory. Running multiple replicas would split those caches per pod and break the replay semantics that callers depend on. Don't horizontally scale this service without first migrating the cache to Redis (or similar shared store).
 
@@ -181,11 +181,11 @@ The Dockerfile installs Pango, Cairo, and Noto fonts for WeasyPrint. The contain
 
 ### Symptom: `No approval received.`
 
-A reproducible failure pattern observed across the CDIT MCP fleet (Stolperstein KU `ku_494ce33c05e27731d2f4d9813e10100b`):
+A reproducible failure pattern we have seen across multiple MCP servers in our fleet:
 
 - Several consecutive identical MCP tool calls return the literal error `No approval received.`
 - A byte-identical retry — same args, same conversation, same MCP session — eventually succeeds.
-- The same string appears on unrelated upstream servers (e.g. Things), strongly suggesting the failure originates above the upstream servers in a shared layer (Cloudflare MCP Portal, FastMCP framework, or Claude.ai client). It is **not** produced by this server's code.
+- The same string appears on unrelated upstream servers, strongly suggesting the failure originates above the upstream servers in a shared layer (the MCP portal aggregator, the FastMCP framework, or the Claude client). It is **not** produced by this server's code.
 
 **Manual workaround for any operator/agent now**:
 
@@ -201,7 +201,7 @@ Every tool invocation is assigned a UUIDv4 `request_id` and appended to an in-me
 
 ```bash
 curl -H "Authorization: Bearer $MCP_API_KEY" \
-  https://mcp.cdit-dev.de/siyuan/health?diag=1 | jq '.diag[-10:]'
+  "https://<your-mcp-host>/siyuan/health?diag=1" | jq '.diag[-10:]'
 ```
 
 Each entry contains `ts`, `request_id`, `caller`, `tool_name`, `args_size_bytes`, `kernel_status`, `latency_ms`, `outcome`, and `error`. The same `request_id` appears as `[request_id=…]` on any error message returned to the MCP client, and as the `request_id` field on every JSON log line in `docker logs`.
@@ -216,14 +216,14 @@ docker logs <mcp-siyuan-container> 2>&1 | jq -c 'select(.request_id == "abc-123-
 
 Once you have a `request_id` from a failure, the next investigation steps live outside this repo:
 
-1. **Grep portal/FastMCP source for `"No approval received"`** — the literal string. Likely candidates: the `klartext` portal aggregator, the FastMCP framework, or the Claude.ai client connector code.
-2. **Pull Cloudflare Access logs** for `mcp.cdit-dev.de` at the failure timestamps. Look for JWT denials/refreshes or 5xx responses from origin.
-3. **Reproduce with `curl`** directly against `mcp.cdit-dev.de` using the same bearer token Claude uses. If the failure pattern reproduces outside Claude → server/portal side. If not → Claude client involvement.
-4. **Audit per-call approval gating** in the portal config and any Claude.ai connector setting that might fire approval prompts the way Claude is making the call doesn't expect.
+1. **Grep the portal/FastMCP source for `"No approval received"`** — the literal string. Likely candidates: the portal aggregator, the FastMCP framework, or the Claude client connector code.
+2. **Pull edge auth logs** (e.g. Cloudflare Access) for the public hostname at the failure timestamps. Look for JWT denials/refreshes or 5xx responses from origin.
+3. **Reproduce with `curl`** directly against the public hostname using the same bearer token Claude uses. If the failure pattern reproduces outside Claude → server/portal side. If not → Claude client involvement.
+4. **Audit per-call approval gating** in the portal config and any Claude connector setting that might fire approval prompts in a way the call site doesn't expect.
 
 ### FastMCP version pin
 
-`fastmcp` is pinned to `==3.2.4` in `pyproject.toml`. This is intentional for the duration of the No-approval-received RCA — a known-fixed framework version makes the upstream investigation tractable. The startup banner logs `fastmcp_version`; if it ever drifts from the pin, the server emits an `ERROR` log line but does not crash. Do not relax the pin without first reading openspec change `siyuan-mcp-reliability-fixes`.
+`fastmcp` is pinned to `==3.2.4` in `pyproject.toml`. This is intentional while the No-approval-received root-cause investigation is open — a known-fixed framework version makes the upstream investigation tractable. The startup banner logs `fastmcp_version`; if it ever drifts from the pin, the server emits an `ERROR` log line but does not crash. Do not relax the pin without coordinating with the team.
 
 ---
 
@@ -289,8 +289,4 @@ The release commit pattern (see commit `8f82d78`): bump both in a single `chore:
 
 ## Related work
 
-- **Stolperstein KU `ku_494ce33c05e27731d2f4d9813e10100b`** — the `No approval received.` symptom and workaround.
-- **Stolperstein KU `ku_9acd350f95e2190c00cc364250976c55`** — adjacent portal caching notes.
-- **CDI-821** — Flurbereinigung / CDIT server consolidation.
-- **CDI-948 / CDI-949** — portal auth and `mcp-infra` server spec.
-- **OpenSpec change `siyuan-mcp-reliability-fixes`** — the change that introduced correlation IDs, structured logging, the diag endpoint, write-tool idempotency, and this README.
+Cross-references to upstream investigations (No-approval-received RCA, portal caching, server consolidation, portal auth) live in the team's internal tracker, not in this public README.
