@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.10] - 2026-05-07
+
+- chore(openspec): archive 4 completed changes, sync delta specs to main (#15)
+
+
 ## [0.2.9] - 2026-05-07
 
 - fix(config): resolve audit findings — env mismatch, zombie vars, settings purity, delete idempotency (#14)
