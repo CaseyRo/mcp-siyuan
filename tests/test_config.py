@@ -73,3 +73,19 @@ def test_auth_settings_defaults():
         warnings.simplefilter("ignore")
         s = Settings(siyuan_token="t")
     assert s.mcp_api_key == ""
+
+
+def test_upstream_probe_interval_default():
+    """upstream_probe_interval defaults to 30 seconds."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        s = Settings(siyuan_token="t")
+    assert s.upstream_probe_interval == 30
+
+
+def test_upstream_probe_interval_from_env(monkeypatch):
+    """upstream_probe_interval reads from UPSTREAM_PROBE_INTERVAL env var."""
+    monkeypatch.setenv("UPSTREAM_PROBE_INTERVAL", "60")
+    monkeypatch.setenv("SIYUAN_TOKEN", "t")
+    s = Settings()
+    assert s.upstream_probe_interval == 60
