@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     siyuan_log_level: str = "INFO"
     siyuan_diag_buffer_size: int = 50
     siyuan_idempotency_ttl_seconds: int = 300
+    upstream_probe_interval: int = 30
 
     model_config = {"env_prefix": "", "case_sensitive": False}
 

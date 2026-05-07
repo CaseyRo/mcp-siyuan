@@ -205,6 +205,36 @@ async def test_delete_block(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_delete_block_already_absent(mock_sy):
+    """delete_block returns success when block is already gone (idempotent)."""
+    from mcp_siyuan.client import SiYuanError
+    from mcp_siyuan.tools.write import delete_block
+
+    mock_sy.call.side_effect = SiYuanError("block not found", code=-1)
+    result = await delete_block(id="missing-block")
+    assert result["ok"] is True
+    assert result.get("already_absent") is True
+
+
+@pytest.mark.asyncio
+async def test_delete_block_idempotency_key(mock_sy):
+    """delete_block with idempotency_key replays from cache on second call."""
+    from mcp_siyuan.idempotency import cache as idempotency_cache
+    from mcp_siyuan.tools.write import delete_block
+
+    idempotency_cache.reset_for_tests(ttl_seconds=300)
+    mock_sy.call.return_value = [{"doOperations": [{"action": "delete"}]}]
+
+    result1 = await delete_block(id="b2", idempotency_key="del-b2-v1")
+    result2 = await delete_block(id="b2", idempotency_key="del-b2-v1")
+
+    assert result1["ok"] is True
+    assert result2["ok"] is True
+    # Second call hits cache — kernel is only called once
+    mock_sy.call.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_set_block_attrs(mock_sy):
     """set_block_attrs sends attrs dict."""
     from mcp_siyuan.tools.write import set_block_attrs

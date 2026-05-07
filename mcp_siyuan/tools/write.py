@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from mcp_siyuan.client import sy
 from mcp_siyuan.idempotency import cache as idempotency_cache
+
+logger = logging.getLogger(__name__)
 
 
 def _wrap_result(result: Any) -> dict[str, Any]:
@@ -206,17 +209,43 @@ async def append_block(
     )
 
 
-async def delete_block(id: str) -> dict[str, Any]:
+async def delete_block(
+    id: str,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
     """[notes] Delete a block by ID.
 
     This permanently removes the block. Use with caution — deletion cannot
     be undone via the API (only via SiYuan's in-app undo).
 
+    Idempotent: re-deleting an already-missing block returns success rather
+    than an error, so callers can safely retry without side effects.
+
     Args:
         id: The block ID to delete.
+        idempotency_key: Optional replay-cache key (see create_document).
+            Replaying the same key within SIYUAN_IDEMPOTENCY_TTL_SECONDS
+            returns the prior result without a new kernel call.
     """
-    result = await sy.call("/api/block/deleteBlock", id=id)
-    return _wrap_result(result)
+    from mcp_siyuan.client import SiYuanError
+
+    async def _call() -> dict[str, Any]:
+        try:
+            result = await sy.call("/api/block/deleteBlock", id=id)
+            return _wrap_result(result)
+        except SiYuanError as exc:
+            # SiYuan returns a non-zero code when the block does not exist.
+            # Treat this as a successful no-op so deletes are safe to replay.
+            logger.info(
+                "delete_block: block %s already absent (code=%s), returning success",
+                id,
+                exc.code,
+            )
+            return {"ok": True, "already_absent": True}
+
+    return await idempotency_cache.with_idempotency(
+        "delete_block", idempotency_key, _call
+    )
 
 
 async def set_block_attrs(

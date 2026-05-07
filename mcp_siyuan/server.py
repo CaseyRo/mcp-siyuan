@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from importlib import metadata as importlib_metadata
@@ -141,7 +140,7 @@ mcp.tool(traced_tool(export_pdf))
 
 # --- Health endpoint + upstream probe -------------------------------------
 _start_time = datetime.now(timezone.utc)
-_probe_ttl = int(os.getenv("UPSTREAM_PROBE_INTERVAL", "30"))
+_probe_ttl = settings.upstream_probe_interval
 _probe_state: dict = {"ok": False, "checked_at": 0.0}
 
 
