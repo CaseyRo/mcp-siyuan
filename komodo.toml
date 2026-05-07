@@ -17,8 +17,5 @@ repo = "CaseyRo/mcp-siyuan"
 branch = "main"
 environment = """
 SIYUAN_TOKEN = [[SIYUAN_TOKEN]]
-MCP_SIYUAN_API_KEY = [[MCP_SIYUAN_API_KEY]]
-MCP_SIYUAN_PUBLIC_URL = https://mcp-siyuan.cdit-dev.de
-KEYCLOAK_ISSUER = https://auth.cdit-works.de/realms/cdit-mcp
-KEYCLOAK_AUDIENCE = mcp-siyuan
+MCP_API_KEY = [[MCP_SIYUAN_API_KEY]]
 """
