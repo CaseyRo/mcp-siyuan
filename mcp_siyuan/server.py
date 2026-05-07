@@ -80,7 +80,7 @@ def _check_fastmcp_version() -> None:
 
 _check_fastmcp_version()
 
-_api_key = os.getenv("MCP_API_KEY", "")
+_api_key = settings.mcp_api_key
 if settings.transport == "http" and not _api_key:
     raise SystemExit(
         "MCP_API_KEY is required in HTTP mode. Refusing to start "

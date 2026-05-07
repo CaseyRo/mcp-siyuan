@@ -46,6 +46,7 @@ jobs:
           NEW="$MAJOR.$MINOR.$((PATCH + 1))"
 
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" pyproject.toml
+          sed -i "s/__version__ = \"$CURRENT\"/__version__ = \"$NEW\"/" mcp_siyuan/__init__.py
 
           DATE=$(date +%Y-%m-%d)
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
@@ -53,7 +54,7 @@ jobs:
           ENTRY="## [$NEW] - $DATE\n\n$COMMITS\n"
           sed -i "/^# Changelog/a\\\\n${ENTRY}" CHANGELOG.md 2>/dev/null || true
 
-          git add pyproject.toml CHANGELOG.md
+          git add pyproject.toml CHANGELOG.md mcp_siyuan/__init__.py
           git commit -m "chore(release): v${NEW} [skip ci]"
           git tag "v${NEW}"
           echo "version=${NEW}" >> "$GITHUB_OUTPUT"
