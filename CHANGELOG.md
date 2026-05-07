@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.9] - 2026-05-07
+
+- fix(config): resolve audit findings — env mismatch, zombie vars, settings purity, delete idempotency (#14)
+
+
 ## [0.2.8] - 2026-05-07
 
 - chore(maintenance): sync __version__, fix API key config path, release CI fix, lint cleanup (#13)
