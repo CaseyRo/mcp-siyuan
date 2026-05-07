@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.8] - 2026-05-07
+
+- chore(maintenance): sync __version__, fix API key config path, release CI fix, lint cleanup (#13)
+
+
 ## [0.2.6] - 2026-04-30
 
 - feat(reliability): correlation IDs, write idempotency, diag endpoint, README rewrite (#10)
