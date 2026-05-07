@@ -17,6 +17,11 @@ services:
           memory: 512m
     volumes:
       - fastmcp-data:/data/fastmcp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - siyuan-cluster_default
 
