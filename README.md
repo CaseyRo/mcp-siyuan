@@ -201,7 +201,7 @@ Every tool invocation is assigned a UUIDv4 `request_id` and appended to an in-me
 
 ```bash
 curl -H "Authorization: Bearer $MCP_API_KEY" \
-  "https://<your-mcp-host>/siyuan/health?diag=1" | jq '.diag[-10:]'
+  "https://<your-mcp-host>/health?diag=1" | jq '.diag[-10:]'
 ```
 
 Each entry contains `ts`, `request_id`, `caller`, `tool_name`, `args_size_bytes`, `kernel_status`, `latency_ms`, `outcome`, and `error`. The same `request_id` appears as `[request_id=…]` on any error message returned to the MCP client, and as the `request_id` field on every JSON log line in `docker logs`.
