@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.11] - 2026-05-08
+
+- fix(release): sync __version__ to 0.2.9, harden CI version bump, fix README health path
+
+
 ## [0.2.10] - 2026-05-07
 
 - chore(openspec): archive 4 completed changes, sync delta specs to main (#15)
