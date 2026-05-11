@@ -11,9 +11,9 @@ dependencies = [
     # siyuan-mcp-reliability-fixes). Bump only after the upstream investigation
     # has identified or ruled out a FastMCP-version-dependent failure.
     "fastmcp==3.2.4",
-    "httpx>=0.28.0",
-    "pydantic>=2.10",
-    "pydantic-settings>=2.12.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.1",
     "weasyprint>=63.0",
     "cachetools>=5.3",
 ]
