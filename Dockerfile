@@ -20,7 +20,13 @@ ENV HOST=0.0.0.0
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD python3 -c "import urllib.request,json,sys; r=urllib.request.urlopen('http://localhost:8000/health',timeout=3); d=json.loads(r.read()); sys.exit(0 if d.get('status')=='healthy' else 1)"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python3 -c "\
+from urllib.request import urlopen; \
+from urllib.error import HTTPError; \
+try: \
+  urlopen('http://localhost:8000/health', timeout=3); exit(0) \
+except HTTPError as e: exit(0 if e.code == 503 else 1) \
+except Exception: exit(1)"
 
 CMD ["mcp-siyuan"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -150,10 +151,18 @@ async def _probe_upstream() -> bool:
     if now - _probe_state["checked_at"] < _probe_ttl:
         return _probe_state["ok"]
     try:
-        await sy.call("/api/system/bootProgress")
+        # Cap probe at 2s so /health always responds before the Docker
+        # healthcheck's 3s urllib timeout (httpx default is 30s).
+        await asyncio.wait_for(
+            sy.call("/api/system/bootProgress"), timeout=2.0
+        )
         if not _probe_state["ok"]:
             logger.info("Upstream SiYuan kernel reachable")
         _probe_state["ok"] = True
+    except asyncio.TimeoutError:
+        if _probe_state["ok"] or _probe_state["checked_at"] == 0.0:
+            logger.error("Upstream SiYuan kernel probe timed out (>2s)")
+        _probe_state["ok"] = False
     except Exception as exc:
         if _probe_state["ok"] or _probe_state["checked_at"] == 0.0:
             logger.error("Upstream SiYuan kernel probe failed: %s", exc)
