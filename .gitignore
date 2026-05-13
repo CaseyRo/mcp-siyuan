@@ -6,6 +6,9 @@ dist/
 build/
 .venv/
 .env
-*.lock
+# *.lock intentionally NOT excluded — uv.lock is committed for reproducible builds
+# Only exclude lock files from old toolchains if needed:
+package-lock.json
+yarn.lock
 .pytest_cache/
 .ruff_cache/
