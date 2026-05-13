@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.13] - 2026-05-13
+
+- fix(health): cap upstream probe at 2s, accept 503 in Docker HEALTHCHECK
+
+
 ## [0.2.11] - 2026-05-08
 
 - fix(release): sync __version__ to 0.2.9, harden CI version bump, fix README health path
