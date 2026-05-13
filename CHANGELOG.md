@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.14] - 2026-05-13
+
+- fix(docker): replace broken HEALTHCHECK one-liner with healthcheck.py script
+
+
 ## [0.2.13] - 2026-05-13
 
 - fix(health): cap upstream probe at 2s, accept 503 in Docker HEALTHCHECK
