@@ -31,6 +31,7 @@ from mcp_siyuan.tools.read import (
 )
 from mcp_siyuan.tools.smart import (
     capture_task,
+    doc_exists,
     find_tasks,
     get_backlinks,
     get_block_children,
@@ -136,6 +137,7 @@ mcp.tool(traced_tool(get_block_children))
 mcp.tool(traced_tool(search_with_context))
 mcp.tool(traced_tool(capture_task))
 mcp.tool(traced_tool(get_document_outline))
+mcp.tool(traced_tool(doc_exists))
 
 # Export
 mcp.tool(traced_tool(export_pdf))

@@ -305,6 +305,39 @@ async def test_get_document_outline(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_doc_exists_found(mock_sy):
+    """doc_exists returns block_id when the doc is present."""
+    from mcp_siyuan.tools.smart import doc_exists
+
+    mock_sy.call.return_value = [{"id": "doc-abc"}]
+    result = await doc_exists(notebook="nb1", path="/Projects/Foo")
+    assert result == {"exists": True, "block_id": "doc-abc", "hpath": "/Projects/Foo"}
+    stmt = mock_sy.call.call_args.kwargs["stmt"]
+    assert "box = 'nb1'" in stmt
+    assert "hpath = '/Projects/Foo'" in stmt
+
+
+@pytest.mark.asyncio
+async def test_doc_exists_missing(mock_sy):
+    """doc_exists returns exists=False when no match — no error."""
+    from mcp_siyuan.tools.smart import doc_exists
+
+    mock_sy.call.return_value = []
+    result = await doc_exists(notebook="nb1", path="/missing")
+    assert result == {"exists": False, "block_id": None, "hpath": "/missing"}
+
+
+@pytest.mark.asyncio
+async def test_doc_exists_normalises_path(mock_sy):
+    """doc_exists prepends a leading slash if missing."""
+    from mcp_siyuan.tools.smart import doc_exists
+
+    mock_sy.call.return_value = []
+    result = await doc_exists(notebook="nb1", path="Projects/Foo")
+    assert result["hpath"] == "/Projects/Foo"
+
+
+@pytest.mark.asyncio
 async def test_sanitize_rejects_sql_injection():
     """_sanitize blocks dangerous SQL characters."""
     from mcp_siyuan.tools.smart import _sanitize
