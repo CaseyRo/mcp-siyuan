@@ -51,6 +51,8 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_update_block` | Update an existing block's content. Accepts `idempotency_key`. |
 | `siyuan_insert_block` | Insert a new block relative to an anchor block. Accepts `idempotency_key`. |
 | `siyuan_append_block` | Append content to the end of a document or container block. Accepts `idempotency_key`. |
+| `siyuan_upsert_section` | Replace (or create) the content between a named heading and the next heading at same/higher level. Heading match is case-insensitive and whitespace-tolerant. Accepts `idempotency_key`. |
+| `siyuan_append_to_section` | Append block(s) at the end of a named section (before the next heading at same/higher level). Errors if the heading is missing — use `upsert_section` to create. Accepts `idempotency_key`. |
 | `siyuan_delete_block` | Delete a block by ID. |
 | `siyuan_delete_doc` | Delete a document by its block ID (wraps `/api/filetree/removeDocByID`). Verifies the doc is actually gone via SQL — unlike `delete_block`, which silently no-ops on type='d' blocks. Accepts `idempotency_key`. |
 | `siyuan_set_block_attrs` | Set attributes on a block. Accepts `idempotency_key`. |

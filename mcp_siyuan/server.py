@@ -44,6 +44,7 @@ from mcp_siyuan.tools.smart import (
 from mcp_siyuan.tools.export import export_pdf
 from mcp_siyuan.tools.write import (
     append_block,
+    append_to_section,
     create_document,
     create_notebook,
     daily_note,
@@ -58,6 +59,7 @@ from mcp_siyuan.tools.write import (
     rename_notebook,
     set_block_attrs,
     update_block,
+    upsert_section,
 )
 
 configure_logging()
@@ -121,6 +123,8 @@ mcp.tool(traced_tool(get_or_create_doc))
 mcp.tool(traced_tool(update_block))
 mcp.tool(traced_tool(insert_block))
 mcp.tool(traced_tool(append_block))
+mcp.tool(traced_tool(upsert_section))
+mcp.tool(traced_tool(append_to_section))
 mcp.tool(traced_tool(delete_block))
 mcp.tool(traced_tool(delete_doc))
 mcp.tool(traced_tool(set_block_attrs))
