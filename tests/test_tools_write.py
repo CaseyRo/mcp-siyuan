@@ -387,3 +387,106 @@ async def test_daily_note_auto_notebook(mock_sy):
     mock_sy.call = mock_call
     result = await daily_note()
     assert result == "daily-auto-id"
+
+
+# --- delete_doc (CDI-1092) ---
+
+
+@pytest.mark.asyncio
+async def test_delete_doc_happy_path(mock_sy):
+    """delete_doc verifies the doc is gone via SQL after removal."""
+    from mcp_siyuan.tools.write import delete_doc
+
+    # Sequence of calls: getBlockInfo (exists), SQL lookup (type=d row),
+    # removeDocByID (None), SQL verify (empty list -> gone).
+    responses = [
+        {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
+        [{"id": "doc1", "type": "d", "box": "nb1", "path": "/foo.sy"}],  # SQL lookup
+        None,  # removeDocByID
+        [],  # SQL verify
+    ]
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        return responses.pop(0)
+
+    mock_sy.call = mock_call
+    result = await delete_doc(id="doc1")
+    assert result["ok"] is True
+    assert result["deleted_id"] == "doc1"
+    assert result["already_absent"] is False
+    # removeDocByID must have been called with the id.
+    endpoints = [c[0] for c in calls]
+    assert "/api/filetree/removeDocByID" in endpoints
+
+
+@pytest.mark.asyncio
+async def test_delete_doc_already_absent_on_lookup(mock_sy):
+    """delete_doc returns success if getBlockInfo errors (block missing)."""
+    from mcp_siyuan.client import SiYuanError
+    from mcp_siyuan.tools.write import delete_doc
+
+    mock_sy.call.side_effect = SiYuanError("ID does not exist", code=-1)
+    result = await delete_doc(id="missing-doc")
+    assert result["ok"] is True
+    assert result["already_absent"] is True
+    assert result["deleted_id"] == "missing-doc"
+
+
+@pytest.mark.asyncio
+async def test_delete_doc_rejects_non_document(mock_sy):
+    """delete_doc raises ValueError when called on a non-document block."""
+    from mcp_siyuan.tools.write import delete_doc
+
+    responses = [
+        {"id": "p1", "type": "p", "rootID": "doc1"},  # getBlockInfo returns paragraph
+        [{"id": "p1", "type": "p"}],  # SQL re-check confirms paragraph
+    ]
+
+    async def mock_call(endpoint, **kwargs):
+        return responses.pop(0)
+
+    mock_sy.call = mock_call
+    with pytest.raises(ValueError, match="not a document"):
+        await delete_doc(id="p1")
+
+
+@pytest.mark.asyncio
+async def test_delete_doc_verify_still_present(mock_sy):
+    """delete_doc raises if SQL verify shows the doc is still queryable."""
+    from mcp_siyuan.client import SiYuanError
+    from mcp_siyuan.tools.write import delete_doc
+
+    responses = [
+        {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
+        [{"id": "doc1", "type": "d"}],  # SQL lookup
+        None,  # removeDocByID returns "success"
+        [{"id": "doc1"}],  # SQL verify — still present (bug case)
+    ]
+
+    async def mock_call(endpoint, **kwargs):
+        return responses.pop(0)
+
+    mock_sy.call = mock_call
+    with pytest.raises(SiYuanError, match="still queryable"):
+        await delete_doc(id="doc1")
+
+
+@pytest.mark.asyncio
+async def test_delete_doc_require_empty_refuses_nonempty(mock_sy):
+    """delete_doc with require_empty=True refuses docs that still have children."""
+    from mcp_siyuan.tools.write import delete_doc
+
+    responses = [
+        {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
+        [{"id": "doc1", "type": "d"}],  # SQL lookup
+        [{"id": "child1", "type": "h", "content": "Heading"}],  # children present
+    ]
+
+    async def mock_call(endpoint, **kwargs):
+        return responses.pop(0)
+
+    mock_sy.call = mock_call
+    with pytest.raises(ValueError, match="still has"):
+        await delete_doc(id="doc1", require_empty=True)

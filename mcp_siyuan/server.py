@@ -47,6 +47,7 @@ from mcp_siyuan.tools.write import (
     create_notebook,
     daily_note,
     delete_block,
+    delete_doc,
     insert_block,
     move_block,
     move_doc,
@@ -118,6 +119,7 @@ mcp.tool(traced_tool(update_block))
 mcp.tool(traced_tool(insert_block))
 mcp.tool(traced_tool(append_block))
 mcp.tool(traced_tool(delete_block))
+mcp.tool(traced_tool(delete_doc))
 mcp.tool(traced_tool(set_block_attrs))
 mcp.tool(traced_tool(move_doc))
 mcp.tool(traced_tool(rename_doc))
