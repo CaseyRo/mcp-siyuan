@@ -51,6 +51,7 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_insert_block` | Insert a new block relative to an anchor block. Accepts `idempotency_key`. |
 | `siyuan_append_block` | Append content to the end of a document or container block. Accepts `idempotency_key`. |
 | `siyuan_delete_block` | Delete a block by ID. |
+| `siyuan_delete_doc` | Delete a document by its block ID (wraps `/api/filetree/removeDocByID`). Verifies the doc is actually gone via SQL — unlike `delete_block`, which silently no-ops on type='d' blocks. Accepts `idempotency_key`. |
 | `siyuan_set_block_attrs` | Set attributes on a block. Accepts `idempotency_key`. |
 | `siyuan_move_doc` | Move one or more documents to a new parent document or notebook. |
 | `siyuan_rename_doc` | Rename a document without moving it. |

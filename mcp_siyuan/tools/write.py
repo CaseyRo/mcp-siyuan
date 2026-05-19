@@ -328,6 +328,126 @@ async def move_block(
     return _wrap_result(result)
 
 
+async def delete_doc(
+    id: str,
+    require_empty: bool = False,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """[notes] Delete a document by its block ID.
+
+    Unlike ``delete_block`` (which silently no-ops on type='d' document blocks
+    because it operates on the inline empty paragraph inside the doc), this
+    tool wraps SiYuan's ``/api/filetree/removeDocByID`` and actually removes
+    the document container.
+
+    After removal, the doc is gone from both the SQL view and the SiYuan UI.
+    Already-absent documents return success so callers can safely retry.
+
+    Args:
+        id: The document block ID to delete (type='d').
+        require_empty: If True, refuse to delete documents that still have
+            child blocks beyond an empty paragraph, to prevent accidental
+            tree wipes. Defaults to False.
+        idempotency_key: Optional replay-cache key (see create_document).
+
+    Returns:
+        ``{"ok": True, "deleted_id": <id>, "already_absent": <bool>}``.
+
+    Raises:
+        ValueError: If ``id`` does not refer to a document-type block, or
+            ``require_empty=True`` and the doc still has children.
+    """
+    from mcp_siyuan.client import SiYuanError
+
+    async def _call() -> dict[str, Any]:
+        # 1. Verify the block exists and is a document.
+        try:
+            info = await sy.call("/api/block/getBlockInfo", id=id)
+        except SiYuanError as exc:
+            # Treat missing-block on lookup as already-absent — idempotent.
+            logger.info(
+                "delete_doc: block %s lookup failed (code=%s), assuming absent",
+                id,
+                exc.code,
+            )
+            return {"ok": True, "deleted_id": id, "already_absent": True}
+        if not info:
+            return {"ok": True, "deleted_id": id, "already_absent": True}
+
+        block_type = info.get("type") or info.get("type_", "")
+        # getBlockInfo for documents typically returns rootID == id and the
+        # field may be absent; verify via SQL.
+        if block_type and block_type != "d":
+            # Fall back to SQL check — getBlockInfo sometimes lacks `type`.
+            sql = await sy.call(
+                "/api/query/sql",
+                stmt=f"SELECT id, type, box, path FROM blocks WHERE id = '{id}' LIMIT 1",
+            )
+            row = sql[0] if isinstance(sql, list) and sql else None
+            if row and row.get("type") != "d":
+                raise ValueError(
+                    f"Block {id} is type='{row.get('type')}', not a document. "
+                    "Use siyuan_delete_block for non-document blocks."
+                )
+
+        # 2. Look up notebook + path from SQL (removeDocByID accepts ID
+        #    directly but we double-check existence and grab path metadata).
+        sql = await sy.call(
+            "/api/query/sql",
+            stmt=f"SELECT id, type, box, path FROM blocks WHERE id = '{id}' AND type = 'd' LIMIT 1",
+        )
+        row = sql[0] if isinstance(sql, list) and sql else None
+        if not row:
+            return {"ok": True, "deleted_id": id, "already_absent": True}
+
+        # 3. Optional safety: refuse to delete non-empty docs.
+        if require_empty:
+            child_rows = await sy.call(
+                "/api/query/sql",
+                stmt=(
+                    f"SELECT id, type, content FROM blocks WHERE parent_id = '{id}' "
+                    f"AND NOT (type = 'p' AND content = '') LIMIT 2"
+                ),
+            )
+            if isinstance(child_rows, list) and child_rows:
+                raise ValueError(
+                    f"Document {id} still has {len(child_rows)} child block(s); "
+                    "pass require_empty=False to delete anyway."
+                )
+
+        # 4. Remove via the filetree endpoint.
+        try:
+            result = await sy.call("/api/filetree/removeDocByID", id=id)
+        except SiYuanError as exc:
+            logger.info(
+                "delete_doc: removeDocByID failed (code=%s); verifying absence",
+                exc.code,
+            )
+            result = None
+
+        # 5. Verify the doc is gone via SQL.
+        verify = await sy.call(
+            "/api/query/sql",
+            stmt=f"SELECT id FROM blocks WHERE id = '{id}' LIMIT 1",
+        )
+        still_present = bool(isinstance(verify, list) and verify)
+        if still_present:
+            raise SiYuanError(
+                f"removeDocByID returned success but doc {id} is still queryable. "
+                "Try again or remove manually in the SiYuan UI."
+            )
+        return {
+            "ok": True,
+            "deleted_id": id,
+            "already_absent": False,
+            "result": result if isinstance(result, (dict, list)) else None,
+        }
+
+    return await idempotency_cache.with_idempotency(
+        "delete_doc", idempotency_key, _call
+    )
+
+
 async def daily_note(notebook: str = "") -> str:
     """[notes] Create or open today's daily note in a notebook.
 
