@@ -389,6 +389,175 @@ async def test_daily_note_auto_notebook(mock_sy):
     assert result == "daily-auto-id"
 
 
+# --- upsert_section + append_to_section (CDI-1050 / CDI-1052) ---
+
+
+# A small fixture document at parent=doc1, ordered by sort:
+#   h1 (subtype h2) "Project Identity"
+#   p1 paragraph
+#   h2 (subtype h3) "Sub"  (still inside Project Identity)
+#   p2 paragraph
+#   h3 (subtype h2) "DoD"
+#   p3 paragraph
+_SECTION_BLOCKS = [
+    {"id": "h1", "type": "h", "subtype": "h2", "content": "Project Identity", "sort": 0},
+    {"id": "p1", "type": "p", "subtype": "", "content": "line one", "sort": 10},
+    {"id": "h2", "type": "h", "subtype": "h3", "content": "Sub", "sort": 20},
+    {"id": "p2", "type": "p", "subtype": "", "content": "sub line", "sort": 30},
+    {"id": "h3", "type": "h", "subtype": "h2", "content": "DoD", "sort": 40},
+    {"id": "p3", "type": "p", "subtype": "", "content": "dod line", "sort": 50},
+]
+
+
+@pytest.mark.asyncio
+async def test_upsert_section_replaces_existing(mock_sy):
+    """upsert_section deletes existing section blocks and inserts new content."""
+    from mcp_siyuan.tools.write import upsert_section
+
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/query/sql":
+            return _SECTION_BLOCKS
+        return None
+
+    mock_sy.call = mock_call
+    result = await upsert_section(
+        doc_id="doc1",
+        section_heading="Project Identity",
+        markdown="New content here",
+    )
+    assert result["ok"] is True
+    assert result["action"] == "replaced"
+    assert result["heading_id"] == "h1"
+
+    deletes = [c for c in calls if c[0] == "/api/block/deleteBlock"]
+    # Section content under h1 (subtype h2) runs until h3 (subtype h2):
+    # → p1, h2, p2 (3 blocks)
+    deleted_ids = [d[1]["id"] for d in deletes]
+    assert set(deleted_ids) == {"p1", "h2", "p2"}
+
+    inserts = [c for c in calls if c[0] == "/api/block/insertBlock"]
+    assert inserts
+    assert inserts[0][1]["previousID"] == "h1"
+    assert inserts[0][1]["data"] == "New content here"
+
+
+@pytest.mark.asyncio
+async def test_upsert_section_creates_when_missing(mock_sy):
+    """upsert_section appends a new heading + body when no match."""
+    from mcp_siyuan.tools.write import upsert_section
+
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/query/sql":
+            return _SECTION_BLOCKS
+        return None
+
+    mock_sy.call = mock_call
+    result = await upsert_section(
+        doc_id="doc1",
+        section_heading="Brand New",
+        markdown="Body",
+        heading_level=2,
+    )
+    assert result["action"] == "created"
+    appends = [c for c in calls if c[0] == "/api/block/appendBlock"]
+    assert appends
+    appended = appends[0][1]["data"]
+    assert appended.startswith("## Brand New")
+    assert "Body" in appended
+    assert appends[0][1]["parentID"] == "doc1"
+
+
+@pytest.mark.asyncio
+async def test_upsert_section_case_and_whitespace_tolerant(mock_sy):
+    """Heading match is case-insensitive and whitespace-tolerant."""
+    from mcp_siyuan.tools.write import upsert_section
+
+    async def mock_call(endpoint, **kwargs):
+        if endpoint == "/api/query/sql":
+            return _SECTION_BLOCKS
+        return None
+
+    mock_sy.call = mock_call
+    result = await upsert_section(
+        doc_id="doc1",
+        section_heading="  project   IDENTITY ",
+        markdown="X",
+    )
+    assert result["action"] == "replaced"
+    assert result["heading_id"] == "h1"
+
+
+@pytest.mark.asyncio
+async def test_append_to_section_inserts_after_last_block(mock_sy):
+    """append_to_section inserts after the last block in the section."""
+    from mcp_siyuan.tools.write import append_to_section
+
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/query/sql":
+            return _SECTION_BLOCKS
+        return None
+
+    mock_sy.call = mock_call
+    result = await append_to_section(
+        doc_id="doc1",
+        section_heading="Project Identity",
+        markdown="appended line",
+    )
+    assert result["ok"] is True
+    # Last block of "Project Identity" section is p2 (h2 ends section).
+    assert result["anchor_id"] == "p2"
+    inserts = [c for c in calls if c[0] == "/api/block/insertBlock"]
+    assert inserts and inserts[0][1]["previousID"] == "p2"
+    assert inserts[0][1]["data"] == "appended line"
+
+
+@pytest.mark.asyncio
+async def test_append_to_section_errors_on_missing_heading(mock_sy):
+    """append_to_section raises when the heading is not found."""
+    from mcp_siyuan.tools.write import append_to_section
+
+    async def mock_call(endpoint, **kwargs):
+        if endpoint == "/api/query/sql":
+            return _SECTION_BLOCKS
+        return None
+
+    mock_sy.call = mock_call
+    with pytest.raises(ValueError, match="not found"):
+        await append_to_section(
+            doc_id="doc1", section_heading="Missing", markdown="x"
+        )
+
+
+@pytest.mark.asyncio
+async def test_append_to_section_empty_section(mock_sy):
+    """When section has no body blocks, anchor falls back to heading id."""
+    from mcp_siyuan.tools.write import append_to_section
+
+    only_heading = [
+        {"id": "h-only", "type": "h", "subtype": "h2", "content": "Empty", "sort": 0},
+    ]
+
+    async def mock_call(endpoint, **kwargs):
+        if endpoint == "/api/query/sql":
+            return only_heading
+        return None
+
+    mock_sy.call = mock_call
+    result = await append_to_section(
+        doc_id="doc1", section_heading="Empty", markdown="first"
+    )
+    assert result["anchor_id"] == "h-only"
+
+
 # --- get_or_create_doc (CDI-1051) ---
 
 

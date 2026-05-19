@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+
+from pydantic import Field
 
 from mcp_siyuan.client import sy
 from mcp_siyuan.idempotency import cache as idempotency_cache
@@ -326,6 +328,211 @@ async def move_block(
         previousID=previous_id,
     )
     return _wrap_result(result)
+
+
+def _normalise_heading(text: str) -> str:
+    """Lowercase + collapse internal whitespace for tolerant heading match."""
+    return " ".join(text.split()).strip().lower()
+
+
+def _heading_level(subtype: str) -> int:
+    """Return numeric heading level from a SiYuan subtype like 'h2'."""
+    if not subtype or len(subtype) < 2 or subtype[0].lower() != "h":
+        return 99
+    try:
+        return int(subtype[1:])
+    except ValueError:
+        return 99
+
+
+async def _find_section(
+    doc_id: str, section_heading: str
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Locate a heading by name within a document.
+
+    Returns (heading_row, section_blocks, all_headings) where
+    ``section_blocks`` is the list of blocks under ``heading_row`` up to (but
+    not including) the next heading at the same or higher level. Match is
+    case-insensitive and whitespace-tolerant.
+    """
+    safe_doc = doc_id
+    if any(c in doc_id for c in ("'", '"', ";", "\n")):
+        raise ValueError("doc_id contains unsafe characters")
+
+    # 1. Fetch all blocks at the document level, ordered by sort, so we can
+    #    determine section boundaries by traversal.
+    rows = await sy.call(
+        "/api/query/sql",
+        stmt=(
+            f"SELECT id, type, subtype, content, sort FROM blocks "
+            f"WHERE root_id = '{safe_doc}' AND parent_id = '{safe_doc}' "
+            f"ORDER BY sort ASC LIMIT 1000"
+        ),
+    )
+    blocks = rows if isinstance(rows, list) else []
+    headings = [b for b in blocks if b.get("type") == "h"]
+
+    target = _normalise_heading(section_heading)
+    heading_row: dict[str, Any] | None = None
+    for h in headings:
+        if _normalise_heading(h.get("content") or "") == target:
+            heading_row = h
+            break
+    if heading_row is None:
+        return None, [], headings
+
+    # 2. Walk forward from the heading; stop at the next heading at same or
+    #    higher level (numerically lower or equal subtype).
+    h_level = _heading_level(heading_row.get("subtype") or "")
+    start_sort = heading_row.get("sort", 0)
+    section_blocks: list[dict[str, Any]] = []
+    for b in blocks:
+        if b.get("sort", 0) <= start_sort or b.get("id") == heading_row.get("id"):
+            continue
+        if b.get("type") == "h" and _heading_level(b.get("subtype") or "") <= h_level:
+            break
+        section_blocks.append(b)
+    return heading_row, section_blocks, headings
+
+
+async def upsert_section(
+    doc_id: str,
+    section_heading: str,
+    markdown: str,
+    heading_level: Annotated[int, Field(ge=1, le=6)] = 2,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """[notes] Replace (or create) a named section's content in a document.
+
+    Finds the heading whose text matches ``section_heading`` (case-insensitive,
+    whitespace-tolerant). Deletes every block between that heading and the
+    next heading at the same or higher level, then inserts ``markdown`` in
+    place. The heading itself is preserved.
+
+    If no matching heading is found, appends a new ``# ... heading_level``
+    heading at the end of the document followed by ``markdown``.
+
+    Args:
+        doc_id: The document block ID.
+        section_heading: Heading text to match (case-insensitive,
+            whitespace-tolerant).
+        markdown: Replacement content for the section.
+        heading_level: Level used when creating a brand-new section (1..6,
+            default 2 → ``## Heading``).
+        idempotency_key: Optional replay-cache key (see create_document).
+
+    Returns:
+        ``{"ok": True, "action": "replaced" | "created", "heading_id": <id>}``.
+    """
+    if not 1 <= int(heading_level) <= 6:
+        raise ValueError("heading_level must be between 1 and 6")
+
+    async def _call() -> dict[str, Any]:
+        heading_row, section_blocks, _ = await _find_section(
+            doc_id, section_heading
+        )
+        if heading_row is None:
+            # Append a new heading + body at the end of the doc.
+            hashes = "#" * int(heading_level)
+            payload = f"{hashes} {section_heading}\n\n{markdown}".rstrip() + "\n"
+            await sy.call(
+                "/api/block/appendBlock",
+                data=payload,
+                dataType="markdown",
+                parentID=doc_id,
+            )
+            return {"ok": True, "action": "created", "heading_id": None}
+
+        # Replace section content: delete current section blocks, then insert
+        # markdown after the heading. Delete from last to first to keep sort
+        # stable.
+        for block in reversed(section_blocks):
+            block_id = block.get("id")
+            if not block_id:
+                continue
+            try:
+                await sy.call("/api/block/deleteBlock", id=block_id)
+            except Exception:
+                # Best-effort delete — surfacing a partial failure here would
+                # leave the section half-replaced. Continue.
+                logger.warning(
+                    "upsert_section: failed to delete block %s", block_id
+                )
+
+        if markdown.strip():
+            await sy.call(
+                "/api/block/insertBlock",
+                data=markdown,
+                dataType="markdown",
+                previousID=heading_row["id"],
+            )
+        return {
+            "ok": True,
+            "action": "replaced",
+            "heading_id": heading_row.get("id"),
+        }
+
+    return await idempotency_cache.with_idempotency(
+        "upsert_section", idempotency_key, _call
+    )
+
+
+async def append_to_section(
+    doc_id: str,
+    section_heading: str,
+    markdown: str,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """[notes] Append block(s) at the end of a named section.
+
+    Finds the heading whose text matches ``section_heading`` (case-insensitive,
+    whitespace-tolerant), then inserts ``markdown`` after the last block in
+    that section but before the next heading at the same or higher level.
+
+    Unlike ``upsert_section``, this errors when the heading does not exist —
+    use ``upsert_section`` for create-or-update semantics.
+
+    Args:
+        doc_id: The document block ID.
+        section_heading: Heading text to match.
+        markdown: Markdown content to append (may contain multiple blocks).
+        idempotency_key: Optional replay-cache key (see create_document).
+
+    Returns:
+        ``{"ok": True, "heading_id": <id>, "anchor_id": <last-block-id>}``.
+
+    Raises:
+        ValueError: If no heading with the given name is found.
+    """
+
+    async def _call() -> dict[str, Any]:
+        heading_row, section_blocks, _ = await _find_section(
+            doc_id, section_heading
+        )
+        if heading_row is None:
+            raise ValueError(
+                f"Section heading '{section_heading}' not found in doc {doc_id}. "
+                "Use upsert_section to create it."
+            )
+        # Anchor: the last block in the section, or the heading itself if empty.
+        anchor_id = (
+            section_blocks[-1]["id"] if section_blocks else heading_row["id"]
+        )
+        await sy.call(
+            "/api/block/insertBlock",
+            data=markdown,
+            dataType="markdown",
+            previousID=anchor_id,
+        )
+        return {
+            "ok": True,
+            "heading_id": heading_row.get("id"),
+            "anchor_id": anchor_id,
+        }
+
+    return await idempotency_cache.with_idempotency(
+        "append_to_section", idempotency_key, _call
+    )
 
 
 async def get_or_create_doc(
