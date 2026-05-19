@@ -47,6 +47,7 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_rename_notebook` | Rename an existing notebook. |
 | `siyuan_remove_notebook` | Remove a notebook and all its documents. |
 | `siyuan_create_document` | Create a new document in a SiYuan notebook. Accepts `idempotency_key`. |
+| `siyuan_get_or_create_doc` | Idempotent upsert of a document by `notebook` + `path`. Returns `{block_id, was_created, was_updated}`. Optional `update_if_exists` replaces content. Accepts `idempotency_key`. |
 | `siyuan_update_block` | Update an existing block's content. Accepts `idempotency_key`. |
 | `siyuan_insert_block` | Insert a new block relative to an anchor block. Accepts `idempotency_key`. |
 | `siyuan_append_block` | Append content to the end of a document or container block. Accepts `idempotency_key`. |
