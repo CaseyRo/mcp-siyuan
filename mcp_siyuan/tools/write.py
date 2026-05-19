@@ -328,6 +328,88 @@ async def move_block(
     return _wrap_result(result)
 
 
+async def get_or_create_doc(
+    notebook: str,
+    path: str,
+    markdown: str = "",
+    update_if_exists: bool = False,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """[notes] Idempotent upsert of a document by ``notebook`` + ``path``.
+
+    If a document already exists at the given path, return its block ID
+    without creating a duplicate. If ``update_if_exists=True``, replace its
+    content with ``markdown``. If no document exists, create one and return
+    the new block ID.
+
+    Path matching uses SiYuan's canonical ``hpath`` format — see
+    ``siyuan_doc_exists`` for details on path normalisation.
+
+    Args:
+        notebook: Notebook ID to look in / create within.
+        path: Document hpath inside the notebook. A path without a leading
+            slash is treated as ``/<path>``.
+        markdown: Content for the doc. Used on creation, and on update when
+            ``update_if_exists=True``.
+        update_if_exists: When True and the doc already exists, replace its
+            content via ``updateBlock``. Defaults to False (find-only).
+        idempotency_key: Optional replay-cache key (see create_document).
+
+    Returns:
+        ``{"block_id": <id>, "was_created": <bool>, "was_updated": <bool>,
+        "hpath": <path>}``.
+    """
+    hpath = path if path.startswith("/") else f"/{path}"
+    # Reject characters that could break out of the SQL string literal.
+    if any(c in (notebook + hpath) for c in ("'", '"', ";", "\n")):
+        raise ValueError("notebook/path contain unsafe characters")
+
+    async def _call() -> dict[str, Any]:
+        lookup = await sy.call(
+            "/api/query/sql",
+            stmt=(
+                f"SELECT id FROM blocks WHERE type = 'd' AND box = '{notebook}' "
+                f"AND hpath = '{hpath}' LIMIT 1"
+            ),
+        )
+        rows = lookup if isinstance(lookup, list) else []
+        if rows:
+            block_id = rows[0].get("id")
+            was_updated = False
+            if update_if_exists and markdown:
+                await sy.call(
+                    "/api/block/updateBlock",
+                    id=block_id,
+                    data=markdown,
+                    dataType="markdown",
+                )
+                was_updated = True
+            return {
+                "block_id": block_id,
+                "was_created": False,
+                "was_updated": was_updated,
+                "hpath": hpath,
+            }
+
+        data = await sy.call(
+            "/api/filetree/createDocWithMd",
+            notebook=notebook,
+            path=hpath,
+            markdown=markdown,
+        )
+        new_id = data if isinstance(data, str) else str(data)
+        return {
+            "block_id": new_id,
+            "was_created": True,
+            "was_updated": False,
+            "hpath": hpath,
+        }
+
+    return await idempotency_cache.with_idempotency(
+        "get_or_create_doc", idempotency_key, _call
+    )
+
+
 async def delete_doc(
     id: str,
     require_empty: bool = False,

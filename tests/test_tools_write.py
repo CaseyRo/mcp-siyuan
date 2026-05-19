@@ -389,6 +389,89 @@ async def test_daily_note_auto_notebook(mock_sy):
     assert result == "daily-auto-id"
 
 
+# --- get_or_create_doc (CDI-1051) ---
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_doc_creates_when_missing(mock_sy):
+    """get_or_create_doc creates a new doc when none exists."""
+    from mcp_siyuan.tools.write import get_or_create_doc
+
+    responses = [
+        [],  # SQL lookup returns empty
+        "new-doc-id",  # createDocWithMd
+    ]
+
+    async def mock_call(endpoint, **kwargs):
+        return responses.pop(0)
+
+    mock_sy.call = mock_call
+    result = await get_or_create_doc(
+        notebook="nb1", path="/Projects/New", markdown="# New"
+    )
+    assert result["block_id"] == "new-doc-id"
+    assert result["was_created"] is True
+    assert result["was_updated"] is False
+    assert result["hpath"] == "/Projects/New"
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_doc_returns_existing(mock_sy):
+    """get_or_create_doc returns existing block_id without re-creating."""
+    from mcp_siyuan.tools.write import get_or_create_doc
+
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/query/sql":
+            return [{"id": "existing-id"}]
+        return None
+
+    mock_sy.call = mock_call
+    result = await get_or_create_doc(notebook="nb1", path="/Existing")
+    assert result["block_id"] == "existing-id"
+    assert result["was_created"] is False
+    assert result["was_updated"] is False
+    # No createDocWithMd call should have been made.
+    assert "/api/filetree/createDocWithMd" not in [c[0] for c in calls]
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_doc_updates_existing(mock_sy):
+    """get_or_create_doc updates content when update_if_exists=True."""
+    from mcp_siyuan.tools.write import get_or_create_doc
+
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/query/sql":
+            return [{"id": "existing-id"}]
+        return None
+
+    mock_sy.call = mock_call
+    result = await get_or_create_doc(
+        notebook="nb1",
+        path="/Existing",
+        markdown="# Updated content",
+        update_if_exists=True,
+    )
+    assert result["was_created"] is False
+    assert result["was_updated"] is True
+    update_call = [c for c in calls if c[0] == "/api/block/updateBlock"]
+    assert update_call and update_call[0][1]["data"] == "# Updated content"
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_doc_rejects_unsafe_path(mock_sy):
+    """get_or_create_doc rejects SQL-injection characters in path."""
+    from mcp_siyuan.tools.write import get_or_create_doc
+
+    with pytest.raises(ValueError, match="unsafe characters"):
+        await get_or_create_doc(notebook="nb1", path="/foo'; DROP TABLE blocks; --")
+
+
 # --- delete_doc (CDI-1092) ---
 
 
