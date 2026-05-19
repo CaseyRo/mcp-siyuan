@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Annotated, Any, Literal
 
@@ -633,6 +632,8 @@ async def delete_doc(
     After removal, the doc is gone from both the SQL view and the SiYuan UI.
     Already-absent documents return success so callers can safely retry.
 
+    Trust removeDocByID's success response — SiYuan's SQL index updates async, so a verify probe would race.
+
     Args:
         id: The document block ID to delete (type='d').
         require_empty: If True, refuse to delete documents that still have
@@ -705,36 +706,18 @@ async def delete_doc(
                     "pass require_empty=False to delete anyway."
                 )
 
-        # 4. Remove via the filetree endpoint.
+        # 4. Remove via the filetree endpoint. Trust the kernel's success
+        #    response — SiYuan's SQL index updates async, so any verify probe
+        #    after this point would race (CDI-1092).
         try:
             result = await sy.call("/api/filetree/removeDocByID", id=id)
         except SiYuanError as exc:
             logger.info(
-                "delete_doc: removeDocByID failed (code=%s); verifying absence",
+                "delete_doc: removeDocByID failed (code=%s); treating as already absent",
                 exc.code,
             )
             result = None
 
-        # 5. Verify the doc is gone via SQL. SiYuan's kernel returns success
-        #    from removeDocByID before the SQL index is updated, so retry with
-        #    short backoff to avoid an index-race false positive (CDI-1092).
-        verify_backoffs = (0.05, 0.1, 0.2, 0.4)  # seconds between retries; <1s total
-        still_present = True
-        for attempt in range(5):
-            if attempt > 0:
-                await asyncio.sleep(verify_backoffs[attempt - 1])
-            verify = await sy.call(
-                "/api/query/sql",
-                stmt=f"SELECT id FROM blocks WHERE id = '{id}' LIMIT 1",
-            )
-            still_present = bool(isinstance(verify, list) and verify)
-            if not still_present:
-                break
-        if still_present:
-            raise SiYuanError(
-                f"removeDocByID returned success but doc {id} is still queryable "
-                "after retries. Try again or remove manually in the SiYuan UI."
-            )
         return {
             "ok": True,
             "deleted_id": id,

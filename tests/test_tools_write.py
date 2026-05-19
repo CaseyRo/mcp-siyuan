@@ -727,16 +727,15 @@ async def test_get_or_create_doc_rejects_unsafe_path(mock_sy):
 
 @pytest.mark.asyncio
 async def test_delete_doc_happy_path(mock_sy):
-    """delete_doc verifies the doc is gone via SQL after removal."""
+    """delete_doc trusts removeDocByID's success response (no SQL verify)."""
     from mcp_siyuan.tools.write import delete_doc
 
     # Sequence of calls: getBlockInfo (exists), SQL lookup (type=d row),
-    # removeDocByID (None), SQL verify (empty list -> gone).
+    # removeDocByID (None). No SQL verify probe is fired afterwards.
     responses = [
         {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
         [{"id": "doc1", "type": "d", "box": "nb1", "path": "/foo.sy"}],  # SQL lookup
         None,  # removeDocByID
-        [],  # SQL verify
     ]
     calls: list[tuple[str, dict]] = []
 
@@ -752,6 +751,45 @@ async def test_delete_doc_happy_path(mock_sy):
     # removeDocByID must have been called with the id.
     endpoints = [c[0] for c in calls]
     assert "/api/filetree/removeDocByID" in endpoints
+
+
+@pytest.mark.asyncio
+async def test_delete_doc_no_sql_verify_after_remove(mock_sy):
+    """delete_doc must NOT fire a SQL verify probe after removeDocByID (CDI-1092)."""
+    from mcp_siyuan.tools.write import delete_doc
+
+    responses = [
+        {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
+        [{"id": "doc1", "type": "d", "box": "nb1", "path": "/foo.sy"}],  # SQL lookup
+        None,  # removeDocByID
+    ]
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        return responses.pop(0)
+
+    mock_sy.call = mock_call
+    result = await delete_doc(id="doc1")
+    assert result["ok"] is True
+
+    # Verify call sequence: getBlockInfo, then SQL lookup, then removeDocByID,
+    # and NO SQL probe after removeDocByID.
+    endpoints = [c[0] for c in calls]
+    assert endpoints[-1] == "/api/filetree/removeDocByID", (
+        f"removeDocByID must be the LAST call; got sequence: {endpoints}"
+    )
+    # Specifically, no `SELECT id FROM blocks WHERE id` probe fires after.
+    remove_idx = endpoints.index("/api/filetree/removeDocByID")
+    after = calls[remove_idx + 1 :]
+    sql_probes_after = [
+        c for c in after
+        if c[0] == "/api/query/sql"
+        and "SELECT id FROM blocks WHERE id" in c[1].get("stmt", "")
+    ]
+    assert sql_probes_after == [], (
+        f"No SQL verify probe should fire after removeDocByID; found: {sql_probes_after}"
+    )
 
 
 @pytest.mark.asyncio
@@ -783,59 +821,6 @@ async def test_delete_doc_rejects_non_document(mock_sy):
     mock_sy.call = mock_call
     with pytest.raises(ValueError, match="not a document"):
         await delete_doc(id="p1")
-
-
-@pytest.mark.asyncio
-async def test_delete_doc_verify_retries_then_succeeds(mock_sy):
-    """delete_doc retries the SQL verify probe to dodge index-update lag (CDI-1092)."""
-    from mcp_siyuan.tools.write import delete_doc
-
-    # First verify still sees the doc (kernel hasn't flushed the index yet),
-    # second verify confirms absence.
-    responses = [
-        {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
-        [{"id": "doc1", "type": "d"}],  # SQL lookup
-        None,  # removeDocByID returns "success"
-        [{"id": "doc1"}],  # SQL verify attempt 1 — still present (index lag)
-        [],  # SQL verify attempt 2 — gone
-    ]
-
-    async def mock_call(endpoint, **kwargs):
-        return responses.pop(0)
-
-    mock_sy.call = mock_call
-    with patch("mcp_siyuan.tools.write.asyncio.sleep", new=AsyncMock()):
-        result = await delete_doc(id="doc1")
-    assert result["ok"] is True
-    assert result["deleted_id"] == "doc1"
-    assert result["already_absent"] is False
-
-
-@pytest.mark.asyncio
-async def test_delete_doc_verify_exhausts_retries(mock_sy):
-    """delete_doc raises after all retries still see the doc as present."""
-    from mcp_siyuan.client import SiYuanError
-    from mcp_siyuan.tools.write import delete_doc
-
-    responses = [
-        {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
-        [{"id": "doc1", "type": "d"}],  # SQL lookup
-        None,  # removeDocByID returns "success"
-        # 5 verify attempts, all returning the doc as present
-        [{"id": "doc1"}],
-        [{"id": "doc1"}],
-        [{"id": "doc1"}],
-        [{"id": "doc1"}],
-        [{"id": "doc1"}],
-    ]
-
-    async def mock_call(endpoint, **kwargs):
-        return responses.pop(0)
-
-    mock_sy.call = mock_call
-    with patch("mcp_siyuan.tools.write.asyncio.sleep", new=AsyncMock()):
-        with pytest.raises(SiYuanError, match="after retries"):
-            await delete_doc(id="doc1")
 
 
 @pytest.mark.asyncio
