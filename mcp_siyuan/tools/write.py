@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Annotated, Any, Literal
 
@@ -714,16 +715,25 @@ async def delete_doc(
             )
             result = None
 
-        # 5. Verify the doc is gone via SQL.
-        verify = await sy.call(
-            "/api/query/sql",
-            stmt=f"SELECT id FROM blocks WHERE id = '{id}' LIMIT 1",
-        )
-        still_present = bool(isinstance(verify, list) and verify)
+        # 5. Verify the doc is gone via SQL. SiYuan's kernel returns success
+        #    from removeDocByID before the SQL index is updated, so retry with
+        #    short backoff to avoid an index-race false positive (CDI-1092).
+        verify_backoffs = (0.05, 0.1, 0.2, 0.4)  # seconds between retries; <1s total
+        still_present = True
+        for attempt in range(5):
+            if attempt > 0:
+                await asyncio.sleep(verify_backoffs[attempt - 1])
+            verify = await sy.call(
+                "/api/query/sql",
+                stmt=f"SELECT id FROM blocks WHERE id = '{id}' LIMIT 1",
+            )
+            still_present = bool(isinstance(verify, list) and verify)
+            if not still_present:
+                break
         if still_present:
             raise SiYuanError(
-                f"removeDocByID returned success but doc {id} is still queryable. "
-                "Try again or remove manually in the SiYuan UI."
+                f"removeDocByID returned success but doc {id} is still queryable "
+                "after retries. Try again or remove manually in the SiYuan UI."
             )
         return {
             "ok": True,
