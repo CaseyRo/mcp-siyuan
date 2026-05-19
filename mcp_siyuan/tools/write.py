@@ -737,6 +737,129 @@ async def delete_doc(
     )
 
 
+_BULK_MAX = 50
+
+
+async def bulk_create_documents(
+    documents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """[notes] Create multiple documents in one call.
+
+    Each item is processed independently — per-item failures do NOT abort
+    the batch. Returns a parallel array of per-item results so callers can
+    retry only the failures.
+
+    Batch size is capped at 50 items. Pass larger batches in multiple calls.
+
+    Args:
+        documents: List of ``{"notebook": str, "path": str, "markdown": str}``
+            entries. ``markdown`` is optional and defaults to empty.
+
+    Returns:
+        List of ``{"path": str, "block_id": str | None, "status": "ok" | "error",
+        "error": str | None}``.
+    """
+    if not isinstance(documents, list):
+        raise TypeError("documents must be a list")
+    if len(documents) > _BULK_MAX:
+        raise ValueError(
+            f"batch size {len(documents)} exceeds limit of {_BULK_MAX}"
+        )
+
+    from mcp_siyuan.client import SiYuanError
+
+    results: list[dict[str, Any]] = []
+    for item in documents:
+        notebook = item.get("notebook", "")
+        path = item.get("path", "")
+        markdown = item.get("markdown", "")
+        if not notebook or not path:
+            results.append({
+                "path": path,
+                "block_id": None,
+                "status": "error",
+                "error": "notebook and path are required",
+            })
+            continue
+        try:
+            data = await sy.call(
+                "/api/filetree/createDocWithMd",
+                notebook=notebook,
+                path=path,
+                markdown=markdown,
+            )
+            new_id = data if isinstance(data, str) else str(data)
+            results.append({
+                "path": path,
+                "block_id": new_id,
+                "status": "ok",
+                "error": None,
+            })
+        except (SiYuanError, ValueError) as exc:
+            results.append({
+                "path": path,
+                "block_id": None,
+                "status": "error",
+                "error": str(exc),
+            })
+    return results
+
+
+async def bulk_set_attrs(
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """[notes] Set attributes on multiple blocks in one call.
+
+    Each item is processed independently — per-item failures do NOT abort
+    the batch. Batch size is capped at 50 items.
+
+    Args:
+        items: List of ``{"block_id": str, "attrs": dict[str, str]}`` entries.
+
+    Returns:
+        List of ``{"block_id": str, "status": "ok" | "error",
+        "error": str | None}``.
+    """
+    if not isinstance(items, list):
+        raise TypeError("items must be a list")
+    if len(items) > _BULK_MAX:
+        raise ValueError(
+            f"batch size {len(items)} exceeds limit of {_BULK_MAX}"
+        )
+
+    from mcp_siyuan.client import SiYuanError
+
+    results: list[dict[str, Any]] = []
+    for entry in items:
+        block_id = entry.get("block_id", "")
+        attrs = entry.get("attrs", {})
+        if not block_id or not isinstance(attrs, dict):
+            results.append({
+                "block_id": block_id,
+                "status": "error",
+                "error": "block_id and attrs (dict) are required",
+            })
+            continue
+        try:
+            await sy.call(
+                "/api/attr/setBlockAttrs",
+                id=block_id,
+                attrs=attrs,
+            )
+            results.append({
+                "block_id": block_id,
+                "status": "ok",
+                "error": None,
+            })
+        except (SiYuanError, ValueError) as exc:
+            results.append({
+                "block_id": block_id,
+                "status": "error",
+                "error": str(exc),
+            })
+    return results
+
+
 async def daily_note(notebook: str = "") -> str:
     """[notes] Create or open today's daily note in a notebook.
 

@@ -45,6 +45,8 @@ from mcp_siyuan.tools.export import export_pdf
 from mcp_siyuan.tools.write import (
     append_block,
     append_to_section,
+    bulk_create_documents,
+    bulk_set_attrs,
     create_document,
     create_notebook,
     daily_note,
@@ -132,6 +134,8 @@ mcp.tool(traced_tool(move_doc))
 mcp.tool(traced_tool(rename_doc))
 mcp.tool(traced_tool(move_block))
 mcp.tool(traced_tool(daily_note))
+mcp.tool(traced_tool(bulk_create_documents))
+mcp.tool(traced_tool(bulk_set_attrs))
 
 # Smart — LLM-ergonomic high-level tools
 mcp.tool(traced_tool(get_recent_docs))

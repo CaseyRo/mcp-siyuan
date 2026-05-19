@@ -389,6 +389,87 @@ async def test_daily_note_auto_notebook(mock_sy):
     assert result == "daily-auto-id"
 
 
+# --- bulk operations (CDI-1053) ---
+
+
+@pytest.mark.asyncio
+async def test_bulk_create_documents_mixed_results(mock_sy):
+    """bulk_create_documents reports per-item status; failures don't abort."""
+    from mcp_siyuan.client import SiYuanError
+    from mcp_siyuan.tools.write import bulk_create_documents
+
+    # First create returns an ID; second raises; third returns an ID.
+    call_iter = iter([
+        "id-a",
+        SiYuanError("conflict", code=-1),
+        "id-c",
+    ])
+
+    async def mock_call(endpoint, **kwargs):
+        nxt = next(call_iter)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
+
+    mock_sy.call = mock_call
+    results = await bulk_create_documents(documents=[
+        {"notebook": "nb1", "path": "/a", "markdown": "A"},
+        {"notebook": "nb1", "path": "/b"},
+        {"notebook": "nb1", "path": "/c"},
+    ])
+    assert [r["status"] for r in results] == ["ok", "error", "ok"]
+    assert results[0]["block_id"] == "id-a"
+    assert "conflict" in (results[1]["error"] or "")
+    assert results[2]["block_id"] == "id-c"
+
+
+@pytest.mark.asyncio
+async def test_bulk_create_documents_missing_fields(mock_sy):
+    """bulk_create_documents reports validation errors per-item."""
+    from mcp_siyuan.tools.write import bulk_create_documents
+
+    mock_sy.call = AsyncMock(return_value="never-called")
+    results = await bulk_create_documents(documents=[
+        {"notebook": "", "path": "/a"},
+        {"notebook": "nb1", "path": ""},
+    ])
+    assert all(r["status"] == "error" for r in results)
+    assert "required" in (results[0]["error"] or "")
+
+
+@pytest.mark.asyncio
+async def test_bulk_create_documents_caps_size(mock_sy):
+    """Batches over 50 items are rejected."""
+    from mcp_siyuan.tools.write import bulk_create_documents
+
+    docs = [{"notebook": "nb1", "path": f"/d{i}"} for i in range(51)]
+    with pytest.raises(ValueError, match="exceeds limit"):
+        await bulk_create_documents(documents=docs)
+
+
+@pytest.mark.asyncio
+async def test_bulk_set_attrs_mixed_results(mock_sy):
+    """bulk_set_attrs reports per-item success/failure."""
+    from mcp_siyuan.client import SiYuanError
+    from mcp_siyuan.tools.write import bulk_set_attrs
+
+    call_iter = iter([None, SiYuanError("bad attr", code=-1)])
+
+    async def mock_call(endpoint, **kwargs):
+        nxt = next(call_iter)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
+
+    mock_sy.call = mock_call
+    results = await bulk_set_attrs(items=[
+        {"block_id": "b1", "attrs": {"custom-x": "1"}},
+        {"block_id": "b2", "attrs": {"custom-y": "2"}},
+    ])
+    assert [r["status"] for r in results] == ["ok", "error"]
+    assert results[1]["block_id"] == "b2"
+
+
 # --- upsert_section + append_to_section (CDI-1050 / CDI-1052) ---
 
 
