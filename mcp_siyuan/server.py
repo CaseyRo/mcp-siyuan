@@ -31,6 +31,7 @@ from mcp_siyuan.tools.read import (
 )
 from mcp_siyuan.tools.smart import (
     capture_task,
+    doc_exists,
     find_tasks,
     get_backlinks,
     get_block_children,
@@ -43,10 +44,15 @@ from mcp_siyuan.tools.smart import (
 from mcp_siyuan.tools.export import export_pdf
 from mcp_siyuan.tools.write import (
     append_block,
+    append_to_section,
+    bulk_create_documents,
+    bulk_set_attrs,
     create_document,
     create_notebook,
     daily_note,
     delete_block,
+    delete_doc,
+    get_or_create_doc,
     insert_block,
     move_block,
     move_doc,
@@ -55,6 +61,7 @@ from mcp_siyuan.tools.write import (
     rename_notebook,
     set_block_attrs,
     update_block,
+    upsert_section,
 )
 
 configure_logging()
@@ -114,15 +121,21 @@ mcp.tool(traced_tool(create_notebook))
 mcp.tool(traced_tool(rename_notebook))
 mcp.tool(traced_tool(remove_notebook))
 mcp.tool(traced_tool(create_document))
+mcp.tool(traced_tool(get_or_create_doc))
 mcp.tool(traced_tool(update_block))
 mcp.tool(traced_tool(insert_block))
 mcp.tool(traced_tool(append_block))
+mcp.tool(traced_tool(upsert_section))
+mcp.tool(traced_tool(append_to_section))
 mcp.tool(traced_tool(delete_block))
+mcp.tool(traced_tool(delete_doc))
 mcp.tool(traced_tool(set_block_attrs))
 mcp.tool(traced_tool(move_doc))
 mcp.tool(traced_tool(rename_doc))
 mcp.tool(traced_tool(move_block))
 mcp.tool(traced_tool(daily_note))
+mcp.tool(traced_tool(bulk_create_documents))
+mcp.tool(traced_tool(bulk_set_attrs))
 
 # Smart — LLM-ergonomic high-level tools
 mcp.tool(traced_tool(get_recent_docs))
@@ -134,6 +147,7 @@ mcp.tool(traced_tool(get_block_children))
 mcp.tool(traced_tool(search_with_context))
 mcp.tool(traced_tool(capture_task))
 mcp.tool(traced_tool(get_document_outline))
+mcp.tool(traced_tool(doc_exists))
 
 # Export
 mcp.tool(traced_tool(export_pdf))

@@ -47,15 +47,21 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_rename_notebook` | Rename an existing notebook. |
 | `siyuan_remove_notebook` | Remove a notebook and all its documents. |
 | `siyuan_create_document` | Create a new document in a SiYuan notebook. Accepts `idempotency_key`. |
+| `siyuan_get_or_create_doc` | Idempotent upsert of a document by `notebook` + `path`. Returns `{block_id, was_created, was_updated}`. Optional `update_if_exists` replaces content. Accepts `idempotency_key`. |
 | `siyuan_update_block` | Update an existing block's content. Accepts `idempotency_key`. |
 | `siyuan_insert_block` | Insert a new block relative to an anchor block. Accepts `idempotency_key`. |
 | `siyuan_append_block` | Append content to the end of a document or container block. Accepts `idempotency_key`. |
+| `siyuan_upsert_section` | Replace (or create) the content between a named heading and the next heading at same/higher level. Heading match is case-insensitive and whitespace-tolerant. Accepts `idempotency_key`. |
+| `siyuan_append_to_section` | Append block(s) at the end of a named section (before the next heading at same/higher level). Errors if the heading is missing — use `upsert_section` to create. Accepts `idempotency_key`. |
 | `siyuan_delete_block` | Delete a block by ID. |
+| `siyuan_delete_doc` | Delete a document by its block ID (wraps `/api/filetree/removeDocByID`). Verifies the doc is actually gone via SQL — unlike `delete_block`, which silently no-ops on type='d' blocks. Accepts `idempotency_key`. |
 | `siyuan_set_block_attrs` | Set attributes on a block. Accepts `idempotency_key`. |
 | `siyuan_move_doc` | Move one or more documents to a new parent document or notebook. |
 | `siyuan_rename_doc` | Rename a document without moving it. |
 | `siyuan_move_block` | Move a block to a new position. |
 | `siyuan_daily_note` | Create or open today's daily note in a notebook. |
+| `siyuan_bulk_create_documents` | Create up to 50 documents in one call. Per-item failures don't abort the batch; results include `status` and `error` so callers can retry only the failures. |
+| `siyuan_bulk_set_attrs` | Set attributes on up to 50 blocks in one call, with per-item status reporting. |
 
 ### Smart — LLM-ergonomic high-level tools
 
@@ -70,6 +76,7 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_search_with_context` | Search SiYuan and return results with surrounding context blocks. |
 | `siyuan_capture_task` | Append a new task checkbox to today's daily note. |
 | `siyuan_get_document_outline` | Get the heading outline of a document. |
+| `siyuan_doc_exists` | Check if a document exists at `notebook` + `hpath`. Returns `{exists, block_id}` — no error on miss. |
 
 ### Export
 
