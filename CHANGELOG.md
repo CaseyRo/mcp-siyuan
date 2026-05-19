@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.17] - 2026-05-19
+
+- fix(siyuan): trust removeDocByID success — drop async SQL verify probe (CDI-1092 follow-up #2)
+
+
 ## [0.2.16] - 2026-05-19
 
 - fix(siyuan): retry delete_doc verify probe to avoid index-race false positive (CDI-1092 follow-up)
