@@ -40,14 +40,71 @@ async def test_call_error_response(client, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_call_connection_error(client, httpx_mock):
+async def test_call_connection_error(client, httpx_mock, monkeypatch):
     """Connection failure raises SiYuanError with URL."""
+    # Disable retries for this test so the failure surfaces immediately.
+    from mcp_siyuan.config import settings as settings_
+
+    monkeypatch.setattr(settings_, "siyuan_retry_max_attempts", 1)
+    monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
     # Login attempt fails
     httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
     # Actual call also fails
     httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
     with pytest.raises(SiYuanError, match="Cannot reach SiYuan"):
         await client.call("/api/notebook/lsNotebooks")
+
+
+@pytest.mark.asyncio
+async def test_call_retries_on_502(client, httpx_mock, monkeypatch):
+    """Transient 502 is retried and recovered on a later attempt (CDI-1093)."""
+    from mcp_siyuan.config import settings as settings_
+
+    monkeypatch.setattr(settings_, "siyuan_retry_max_attempts", 3)
+    monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
+    monkeypatch.setattr(settings_, "siyuan_retry_max_backoff", 0.0)
+
+    # Login succeeds.
+    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})
+    # First two attempts return 502; third attempt succeeds.
+    httpx_mock.add_response(status_code=502, text="bad gateway")
+    httpx_mock.add_response(status_code=502, text="bad gateway")
+    httpx_mock.add_response(
+        json={"code": 0, "msg": "", "data": {"ok": True}},
+    )
+    result = await client.call("/api/filetree/renameDocByID", id="x", title="y")
+    assert result == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_call_does_not_retry_on_4xx(client, httpx_mock, monkeypatch):
+    """4xx responses are not retried (only 502/503/504)."""
+    from mcp_siyuan.config import settings as settings_
+
+    monkeypatch.setattr(settings_, "siyuan_retry_max_attempts", 3)
+    monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
+
+    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})  # login
+    httpx_mock.add_response(status_code=400, text="bad request")
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.call("/api/x", foo="bar")
+
+
+@pytest.mark.asyncio
+async def test_call_503_retry_exhaustion_marks_retryable(
+    client, httpx_mock, monkeypatch
+):
+    """Persistent 503 surfaces a retryable HTTPStatusError after retries."""
+    from mcp_siyuan.config import settings as settings_
+
+    monkeypatch.setattr(settings_, "siyuan_retry_max_attempts", 2)
+    monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
+
+    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})  # login
+    httpx_mock.add_response(status_code=503, text="unavailable")
+    httpx_mock.add_response(status_code=503, text="unavailable")
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.call("/api/x", foo="bar")
 
 
 @pytest.mark.asyncio

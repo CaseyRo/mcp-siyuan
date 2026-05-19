@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     siyuan_idempotency_ttl_seconds: int = 300
     upstream_probe_interval: int = 30
 
+    # HTTP-level retry on transient upstream failures (CDI-1093).
+    # Applied to 5xx responses (502/503/504) and httpx transport errors.
+    siyuan_retry_max_attempts: int = 3
+    siyuan_retry_initial_backoff: float = 0.25
+    siyuan_retry_max_backoff: float = 2.0
+
     model_config = {"env_prefix": "", "case_sensitive": False}
 
     @field_validator("siyuan_url")
