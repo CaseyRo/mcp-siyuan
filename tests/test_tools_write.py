@@ -786,8 +786,34 @@ async def test_delete_doc_rejects_non_document(mock_sy):
 
 
 @pytest.mark.asyncio
-async def test_delete_doc_verify_still_present(mock_sy):
-    """delete_doc raises if SQL verify shows the doc is still queryable."""
+async def test_delete_doc_verify_retries_then_succeeds(mock_sy):
+    """delete_doc retries the SQL verify probe to dodge index-update lag (CDI-1092)."""
+    from mcp_siyuan.tools.write import delete_doc
+
+    # First verify still sees the doc (kernel hasn't flushed the index yet),
+    # second verify confirms absence.
+    responses = [
+        {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
+        [{"id": "doc1", "type": "d"}],  # SQL lookup
+        None,  # removeDocByID returns "success"
+        [{"id": "doc1"}],  # SQL verify attempt 1 — still present (index lag)
+        [],  # SQL verify attempt 2 — gone
+    ]
+
+    async def mock_call(endpoint, **kwargs):
+        return responses.pop(0)
+
+    mock_sy.call = mock_call
+    with patch("mcp_siyuan.tools.write.asyncio.sleep", new=AsyncMock()):
+        result = await delete_doc(id="doc1")
+    assert result["ok"] is True
+    assert result["deleted_id"] == "doc1"
+    assert result["already_absent"] is False
+
+
+@pytest.mark.asyncio
+async def test_delete_doc_verify_exhausts_retries(mock_sy):
+    """delete_doc raises after all retries still see the doc as present."""
     from mcp_siyuan.client import SiYuanError
     from mcp_siyuan.tools.write import delete_doc
 
@@ -795,15 +821,21 @@ async def test_delete_doc_verify_still_present(mock_sy):
         {"id": "doc1", "type": "d", "rootID": "doc1"},  # getBlockInfo
         [{"id": "doc1", "type": "d"}],  # SQL lookup
         None,  # removeDocByID returns "success"
-        [{"id": "doc1"}],  # SQL verify — still present (bug case)
+        # 5 verify attempts, all returning the doc as present
+        [{"id": "doc1"}],
+        [{"id": "doc1"}],
+        [{"id": "doc1"}],
+        [{"id": "doc1"}],
+        [{"id": "doc1"}],
     ]
 
     async def mock_call(endpoint, **kwargs):
         return responses.pop(0)
 
     mock_sy.call = mock_call
-    with pytest.raises(SiYuanError, match="still queryable"):
-        await delete_doc(id="doc1")
+    with patch("mcp_siyuan.tools.write.asyncio.sleep", new=AsyncMock()):
+        with pytest.raises(SiYuanError, match="after retries"):
+            await delete_doc(id="doc1")
 
 
 @pytest.mark.asyncio
