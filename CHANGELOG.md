@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.16] - 2026-05-19
+
+- fix(siyuan): retry delete_doc verify probe to avoid index-race false positive (CDI-1092 follow-up)
+
+
 ## [0.2.14] - 2026-05-13
 
 - fix(docker): replace broken HEALTHCHECK one-liner with healthcheck.py script
