@@ -312,6 +312,39 @@ async def capture_task(
     }
 
 
+async def doc_exists(notebook: str, path: str) -> dict[str, Any]:
+    """[notes] Check if a document exists at ``notebook`` + ``hpath``.
+
+    Lightweight existence check that does not error on miss. Saves a follow-up
+    call by returning the matching ``block_id`` when found.
+
+    Path matching uses SiYuan's canonical ``hpath`` format — the human-readable
+    path without the ``.sy`` extension, e.g. ``/Projects/Foo`` (leading slash,
+    no trailing slash). A path passed without a leading slash is treated as
+    ``/<path>`` for convenience.
+
+    Args:
+        notebook: Notebook ID (the ``box`` column on the ``blocks`` table).
+        path: Document hpath inside the notebook.
+
+    Returns:
+        ``{"exists": bool, "block_id": str | None, "hpath": str}``.
+    """
+    safe_nb = _sanitize(notebook)
+    hpath = path if path.startswith("/") else f"/{path}"
+    safe_hpath = _sanitize(hpath)
+    stmt = (
+        f"SELECT id FROM blocks "
+        f"WHERE type = 'd' AND box = '{safe_nb}' AND hpath = '{safe_hpath}' "
+        f"LIMIT 1"
+    )
+    data = await sy.call("/api/query/sql", stmt=stmt)
+    rows = data if isinstance(data, list) else []
+    if rows:
+        return {"exists": True, "block_id": rows[0].get("id"), "hpath": hpath}
+    return {"exists": False, "block_id": None, "hpath": hpath}
+
+
 async def get_document_outline(
     id: str,
     limit: Annotated[int, Field(ge=1, le=200)] = 100,
