@@ -71,6 +71,7 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_search_with_context` | Search SiYuan and return results with surrounding context blocks. |
 | `siyuan_capture_task` | Append a new task checkbox to today's daily note. |
 | `siyuan_get_document_outline` | Get the heading outline of a document. |
+| `siyuan_doc_exists` | Check if a document exists at `notebook` + `hpath`. Returns `{exists, block_id}` — no error on miss. |
 
 ### Export
 
