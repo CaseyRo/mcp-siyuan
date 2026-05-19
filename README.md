@@ -60,6 +60,8 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_rename_doc` | Rename a document without moving it. |
 | `siyuan_move_block` | Move a block to a new position. |
 | `siyuan_daily_note` | Create or open today's daily note in a notebook. |
+| `siyuan_bulk_create_documents` | Create up to 50 documents in one call. Per-item failures don't abort the batch; results include `status` and `error` so callers can retry only the failures. |
+| `siyuan_bulk_set_attrs` | Set attributes on up to 50 blocks in one call, with per-item status reporting. |
 
 ### Smart — LLM-ergonomic high-level tools
 
