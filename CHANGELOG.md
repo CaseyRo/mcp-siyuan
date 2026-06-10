@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.18] - 2026-06-10
+
+- feat: fastmcp 3.4.2 uplift — annotations, structured output, resources, prompts, context (#26)
+
+
 ## [0.2.17] - 2026-05-19
 
 - fix(siyuan): trust removeDocByID success — drop async SQL verify probe (CDI-1092 follow-up #2)
