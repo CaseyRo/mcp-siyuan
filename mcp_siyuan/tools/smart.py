@@ -10,7 +10,18 @@ from fastmcp import Context
 from pydantic import Field
 
 from mcp_siyuan.client import sy
-from mcp_siyuan.models import DocExistsResult
+from mcp_siyuan.models import (
+    Backlink,
+    BlockChildren,
+    CaptureTaskResult,
+    ContextSearchHit,
+    DocExistsResult,
+    OutlineHeading,
+    RecentDoc,
+    TaggedBlock,
+    TagCount,
+    TaskItem,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +40,7 @@ def _sanitize(value: str) -> str:
 async def get_recent_docs(
     limit: Annotated[int, Field(ge=1, le=50)] = 10,
     notebook: str = "",
-) -> list[dict[str, Any]]:
+) -> list[RecentDoc]:
     """[notes] Get recently modified documents, newest first.
 
     Great for understanding what the user has been working on lately.
@@ -43,7 +54,8 @@ async def get_recent_docs(
         where += f" AND box = '{_sanitize(notebook)}'"
     stmt = f"SELECT id, content AS title, box, hpath, updated FROM blocks {where} ORDER BY updated DESC LIMIT {limit}"
     data = await sy.call("/api/query/sql", stmt=stmt)
-    return data if isinstance(data, list) else []
+    rows = data if isinstance(data, list) else []
+    return [RecentDoc(**row) for row in rows]
 
 
 async def find_tasks(
@@ -51,7 +63,7 @@ async def find_tasks(
     checked: bool = False,
     days: Annotated[int, Field(ge=1, le=365)] = 7,
     limit: Annotated[int, Field(ge=1, le=100)] = 50,
-) -> list[dict[str, Any]]:
+) -> list[TaskItem]:
     """[notes] Find task/TODO items across SiYuan notes.
 
     Searches for task list items (checkbox blocks). Perfect for extracting
@@ -80,10 +92,11 @@ async def find_tasks(
         f"{where} ORDER BY b.updated DESC LIMIT {limit}"
     )
     data = await sy.call("/api/query/sql", stmt=stmt)
-    return data if isinstance(data, list) else []
+    rows = data if isinstance(data, list) else []
+    return [TaskItem(**row) for row in rows]
 
 
-async def get_backlinks(id: str) -> list[dict[str, Any]]:
+async def get_backlinks(id: str) -> list[Backlink]:
     """[notes] Get all blocks that reference (link to) a given block or document.
 
     Essential for understanding how content is connected in the knowledge graph.
@@ -97,22 +110,22 @@ async def get_backlinks(id: str) -> list[dict[str, Any]]:
     if not data:
         return []
     backlinks = data.get("backlinks", [])
-    results = []
+    results: list[Backlink] = []
     for bl in backlinks:
         doc_title = bl.get("name", "")
         for block in bl.get("backlinks", []):
-            results.append({
-                "id": block.get("id", ""),
-                "content": block.get("content", ""),
-                "type": block.get("type", ""),
-                "hpath": block.get("hPath", ""),
-                "box": block.get("box", ""),
-                "doc_title": doc_title,
-            })
+            results.append(Backlink(
+                id=block.get("id", ""),
+                content=block.get("content", ""),
+                type=block.get("type", ""),
+                hpath=block.get("hPath", ""),
+                box=block.get("box", ""),
+                doc_title=doc_title,
+            ))
     return results
 
 
-async def get_tags() -> list[dict[str, Any]]:
+async def get_tags() -> list[TagCount]:
     """[notes] List all tags used across the workspace with their usage count.
 
     Useful for discovering how content is organized and finding tag-based entry points.
@@ -122,13 +135,13 @@ async def get_tags() -> list[dict[str, Any]]:
         return []
     tags = data.get("tags", [])
 
-    def _flatten(tag_list: list, prefix: str = "") -> list[dict[str, Any]]:
-        results = []
+    def _flatten(tag_list: list, prefix: str = "") -> list[TagCount]:
+        results: list[TagCount] = []
         for t in tag_list:
             label = t.get("label", "")
             full = f"{prefix}/{label}" if prefix else label
             count = t.get("count", 0)
-            results.append({"tag": full, "count": count})
+            results.append(TagCount(tag=full, count=count))
             children = t.get("tags", [])
             if children:
                 results.extend(_flatten(children, full))
@@ -137,7 +150,7 @@ async def get_tags() -> list[dict[str, Any]]:
     return _flatten(tags)
 
 
-async def search_by_tag(tag: str) -> list[dict[str, Any]]:
+async def search_by_tag(tag: str) -> list[TaggedBlock]:
     """[notes] Find all blocks with a specific tag.
 
     Args:
@@ -152,14 +165,15 @@ async def search_by_tag(tag: str) -> list[dict[str, Any]]:
         f"ORDER BY blocks.updated DESC LIMIT 50"
     )
     data = await sy.call("/api/query/sql", stmt=stmt)
-    return data if isinstance(data, list) else []
+    rows = data if isinstance(data, list) else []
+    return [TaggedBlock(**row) for row in rows]
 
 
 async def get_block_children(
     id: str,
     depth: Annotated[int, Field(ge=1, le=5)] = 2,
     ctx: Context | None = None,
-) -> dict[str, Any]:
+) -> BlockChildren:
     """[notes] Get a block and its child blocks as a tree structure.
 
     Useful for understanding document outline or navigating into a section.
@@ -213,19 +227,19 @@ async def get_block_children(
 
     # Get the parent block info
     parent_data = await sy.call("/api/block/getBlockInfo", id=safe_id)
-    return {
-        "id": id,
-        "content": parent_data.get("content", "") if parent_data else "",
-        "type": parent_data.get("type", "") if parent_data else "",
-        "children": _build_tree(safe_id),
-    }
+    return BlockChildren(
+        id=id,
+        content=parent_data.get("content", "") if parent_data else "",
+        type=parent_data.get("type", "") if parent_data else "",
+        children=_build_tree(safe_id),
+    )
 
 
 async def search_with_context(
     query: str,
     context_blocks: Annotated[int, Field(ge=0, le=10)] = 2,
     limit: Annotated[int, Field(ge=1, le=50)] = 10,
-) -> list[dict[str, Any]]:
+) -> list[ContextSearchHit]:
     """[notes] Search SiYuan and return results with surrounding context blocks.
 
     Unlike basic search, this returns the blocks before and after each match,
@@ -246,17 +260,10 @@ async def search_with_context(
     )
     blocks = data.get("blocks", []) if data else []
 
-    results = []
+    results: list[ContextSearchHit] = []
     for b in blocks:
         block_id = b.get("id", "")
-        entry: dict[str, Any] = {
-            "id": block_id,
-            "content": b.get("content", ""),
-            "type": b.get("type", ""),
-            "hpath": b.get("hPath", ""),
-            "box": b.get("box", ""),
-            "root_id": b.get("rootID", ""),
-        }
+        context: list[dict[str, Any]] = []
 
         if context_blocks > 0 and block_id:
             safe_block_id = _sanitize(block_id)
@@ -271,9 +278,17 @@ async def search_with_context(
                 if idx >= 0:
                     start = max(0, idx - context_blocks)
                     end = min(len(siblings), idx + context_blocks + 1)
-                    entry["context"] = siblings[start:end]
+                    context = siblings[start:end]
 
-        results.append(entry)
+        results.append(ContextSearchHit(
+            id=block_id,
+            content=b.get("content", ""),
+            type=b.get("type", ""),
+            hpath=b.get("hPath", ""),
+            box=b.get("box", ""),
+            root_id=b.get("rootID", ""),
+            context=context,
+        ))
 
     return results
 
@@ -281,7 +296,7 @@ async def search_with_context(
 async def capture_task(
     text: str,
     notebook: str = "",
-) -> dict[str, Any]:
+) -> CaptureTaskResult:
     """[notes] Append a new task checkbox to today's daily note.
 
     This is a high-level convenience tool that combines listing notebooks,
@@ -300,13 +315,13 @@ async def capture_task(
         notebooks = nb_data.get("notebooks", []) if nb_data else []
         open_nbs = [nb for nb in notebooks if not nb.get("closed", False)]
         if not open_nbs:
-            return {"error": "No open notebooks found"}
+            return CaptureTaskResult(error="No open notebooks found")
         notebook = open_nbs[0]["id"]
 
     # Create or open today's daily note
     daily_id = await sy.call("/api/filetree/createDailyNote", notebook=notebook)
     if not daily_id:
-        return {"error": "Failed to create daily note"}
+        return CaptureTaskResult(error="Failed to create daily note")
     doc_id = daily_id if isinstance(daily_id, str) else str(daily_id)
 
     # Append the task
@@ -318,13 +333,13 @@ async def capture_task(
         parentID=doc_id,
     )
 
-    return {
-        "ok": True,
-        "daily_note_id": doc_id,
-        "notebook": notebook,
-        "task": text,
-        "transactions": result if isinstance(result, list) else [],
-    }
+    return CaptureTaskResult(
+        ok=True,
+        daily_note_id=doc_id,
+        notebook=notebook,
+        task=text,
+        transactions=result if isinstance(result, list) else [],
+    )
 
 
 async def doc_exists(notebook: str, path: str) -> DocExistsResult:
@@ -363,7 +378,7 @@ async def doc_exists(notebook: str, path: str) -> DocExistsResult:
 async def get_document_outline(
     id: str,
     limit: Annotated[int, Field(ge=1, le=200)] = 100,
-) -> list[dict[str, Any]]:
+) -> list[OutlineHeading]:
     """[notes] Get the heading outline of a document.
 
     Returns only heading blocks in order — useful for understanding document
@@ -380,4 +395,5 @@ async def get_document_outline(
         f"ORDER BY sort ASC LIMIT {limit}"
     )
     data = await sy.call("/api/query/sql", stmt=stmt)
-    return data if isinstance(data, list) else []
+    rows = data if isinstance(data, list) else []
+    return [OutlineHeading(**row) for row in rows]

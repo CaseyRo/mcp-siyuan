@@ -13,7 +13,11 @@ from mcp_siyuan.idempotency import cache as idempotency_cache
 from mcp_siyuan.models import (
     BulkAttrResult,
     BulkDocResult,
+    DeleteBlockResult,
+    DeleteDocResult,
     DocUpsertResult,
+    SectionResult,
+    WriteResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,16 +45,23 @@ async def _ctx_progress(
         logger.debug("ctx.report_progress failed", exc_info=True)
 
 
-def _wrap_result(result: Any) -> dict[str, Any]:
-    """Normalise SiYuan write responses to always return a dict."""
+def _wrap_result(result: Any) -> WriteResult:
+    """Normalise SiYuan write responses to a typed ``WriteResult``.
+
+    SiYuan returns either a dict (kernel object), a list (transaction array), or
+    nothing on a write. We preserve the historical wire shape exactly:
+      * dict  → its keys are passed through verbatim (``extra="allow"``),
+      * list  → ``{"ok": True, "transactions": [...]}``,
+      * other → ``{"ok": True}``.
+    """
     if isinstance(result, dict):
-        return result
+        return WriteResult(**result)
     if isinstance(result, list):
-        return {"ok": True, "transactions": result}
-    return {"ok": True}
+        return WriteResult(ok=True, transactions=result)
+    return WriteResult(ok=True)
 
 
-async def create_notebook(name: str) -> dict[str, Any]:
+async def create_notebook(name: str) -> WriteResult:
     """[notes] Create a new notebook in SiYuan.
 
     Args:
@@ -60,10 +71,10 @@ async def create_notebook(name: str) -> dict[str, Any]:
         Dict containing the notebook object with its ID.
     """
     data = await sy.call("/api/notebook/createNotebook", name=name)
-    return data if isinstance(data, dict) else {"ok": True}
+    return WriteResult(**data) if isinstance(data, dict) else WriteResult(ok=True)
 
 
-async def rename_notebook(notebook: str, name: str) -> dict[str, Any]:
+async def rename_notebook(notebook: str, name: str) -> WriteResult:
     """[notes] Rename an existing notebook.
 
     Args:
@@ -78,7 +89,7 @@ async def rename_notebook(notebook: str, name: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def remove_notebook(notebook: str) -> dict[str, Any]:
+async def remove_notebook(notebook: str) -> WriteResult:
     """[notes] Remove a notebook and all its documents.
 
     This permanently removes the notebook. Use with caution — deletion cannot
@@ -137,7 +148,7 @@ async def update_block(
     data: str,
     data_type: Literal["markdown", "dom"] = "markdown",
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> WriteResult:
     """[notes] Update an existing block's content.
 
     Args:
@@ -147,7 +158,7 @@ async def update_block(
         idempotency_key: Optional replay-cache key (see create_document).
     """
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> WriteResult:
         result = await sy.call(
             "/api/block/updateBlock",
             id=id,
@@ -171,7 +182,7 @@ async def insert_block(
     next_id: str = "",
     parent_id: str = "",
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> WriteResult:
     """[notes] Insert a new block relative to an anchor block.
 
     Args:
@@ -201,7 +212,7 @@ async def insert_block(
         if parent_id:
             payload["parentID"] = parent_id
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> WriteResult:
         result = await sy.call("/api/block/insertBlock", **payload)
         return _wrap_result(result)
 
@@ -215,7 +226,7 @@ async def append_block(
     data: str,
     data_type: Literal["markdown", "dom"] = "markdown",
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> WriteResult:
     """[notes] Append content to the end of a document or container block.
 
     Args:
@@ -225,7 +236,7 @@ async def append_block(
         idempotency_key: Optional replay-cache key (see create_document).
     """
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> WriteResult:
         result = await sy.call(
             "/api/block/appendBlock",
             data=data,
@@ -242,7 +253,7 @@ async def append_block(
 async def delete_block(
     id: str,
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> DeleteBlockResult:
     """[notes] Delete a block by ID.
 
     This permanently removes the block. Use with caution — deletion cannot
@@ -259,10 +270,14 @@ async def delete_block(
     """
     from mcp_siyuan.client import SiYuanError
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> DeleteBlockResult:
         try:
             result = await sy.call("/api/block/deleteBlock", id=id)
-            return _wrap_result(result)
+            wrapped = _wrap_result(result)
+            return DeleteBlockResult(
+                ok=wrapped.ok,
+                transactions=wrapped.transactions,
+            )
         except SiYuanError as exc:
             # SiYuan returns a non-zero code when the block does not exist.
             # Treat this as a successful no-op so deletes are safe to replay.
@@ -271,7 +286,7 @@ async def delete_block(
                 id,
                 exc.code,
             )
-            return {"ok": True, "already_absent": True}
+            return DeleteBlockResult(ok=True, already_absent=True)
 
     return await idempotency_cache.with_idempotency(
         "delete_block", idempotency_key, _call
@@ -282,7 +297,7 @@ async def set_block_attrs(
     id: str,
     attrs: dict[str, str],
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> WriteResult:
     """[notes] Set attributes on a block.
 
     Args:
@@ -291,20 +306,20 @@ async def set_block_attrs(
         idempotency_key: Optional replay-cache key (see create_document).
     """
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> WriteResult:
         result = await sy.call(
             "/api/attr/setBlockAttrs",
             id=id,
             attrs=attrs,
         )
-        return result if isinstance(result, dict) else {"ok": True}
+        return WriteResult(**result) if isinstance(result, dict) else WriteResult(ok=True)
 
     return await idempotency_cache.with_idempotency(
         "set_block_attrs", idempotency_key, _call
     )
 
 
-async def move_doc(from_ids: list[str], to_id: str) -> dict[str, Any]:
+async def move_doc(from_ids: list[str], to_id: str) -> WriteResult:
     """[notes] Move one or more documents to a new parent document or notebook.
 
     Args:
@@ -319,7 +334,7 @@ async def move_doc(from_ids: list[str], to_id: str) -> dict[str, Any]:
     return _wrap_result(result)
 
 
-async def rename_doc(id: str, title: str) -> dict[str, Any]:
+async def rename_doc(id: str, title: str) -> WriteResult:
     """[notes] Rename a document without moving it.
 
     Args:
@@ -336,7 +351,7 @@ async def rename_doc(id: str, title: str) -> dict[str, Any]:
 
 async def move_block(
     id: str, parent_id: str = "", previous_id: str = ""
-) -> dict[str, Any]:
+) -> WriteResult:
     """[notes] Move a block to a new position.
 
     At least one of parent_id or previous_id must be provided.
@@ -429,7 +444,7 @@ async def upsert_section(
     markdown: str,
     heading_level: Annotated[int, Field(ge=1, le=6)] = 2,
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> SectionResult:
     """[notes] Replace (or create) a named section's content in a document.
 
     Finds the heading whose text matches ``section_heading`` (case-insensitive,
@@ -455,7 +470,7 @@ async def upsert_section(
     if not 1 <= int(heading_level) <= 6:
         raise ValueError("heading_level must be between 1 and 6")
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> SectionResult:
         heading_row, section_blocks, _ = await _find_section(
             doc_id, section_heading
         )
@@ -469,7 +484,7 @@ async def upsert_section(
                 dataType="markdown",
                 parentID=doc_id,
             )
-            return {"ok": True, "action": "created", "heading_id": None}
+            return SectionResult(ok=True, action="created", heading_id=None)
 
         # Replace section content: delete current section blocks, then insert
         # markdown after the heading. Delete from last to first to keep sort
@@ -494,11 +509,11 @@ async def upsert_section(
                 dataType="markdown",
                 previousID=heading_row["id"],
             )
-        return {
-            "ok": True,
-            "action": "replaced",
-            "heading_id": heading_row.get("id"),
-        }
+        return SectionResult(
+            ok=True,
+            action="replaced",
+            heading_id=heading_row.get("id"),
+        )
 
     return await idempotency_cache.with_idempotency(
         "upsert_section", idempotency_key, _call
@@ -510,7 +525,7 @@ async def append_to_section(
     section_heading: str,
     markdown: str,
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> SectionResult:
     """[notes] Append block(s) at the end of a named section.
 
     Finds the heading whose text matches ``section_heading`` (case-insensitive,
@@ -533,7 +548,7 @@ async def append_to_section(
         ValueError: If no heading with the given name is found.
     """
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> SectionResult:
         heading_row, section_blocks, _ = await _find_section(
             doc_id, section_heading
         )
@@ -552,11 +567,11 @@ async def append_to_section(
             dataType="markdown",
             previousID=anchor_id,
         )
-        return {
-            "ok": True,
-            "heading_id": heading_row.get("id"),
-            "anchor_id": anchor_id,
-        }
+        return SectionResult(
+            ok=True,
+            heading_id=heading_row.get("id"),
+            anchor_id=anchor_id,
+        )
 
     return await idempotency_cache.with_idempotency(
         "append_to_section", idempotency_key, _call
@@ -649,7 +664,7 @@ async def delete_doc(
     id: str,
     require_empty: bool = False,
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> DeleteDocResult:
     """[notes] Delete a document by its block ID.
 
     Unlike ``delete_block`` (which silently no-ops on type='d' document blocks
@@ -678,7 +693,7 @@ async def delete_doc(
     """
     from mcp_siyuan.client import SiYuanError
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> DeleteDocResult:
         # 1. Verify the block exists and is a document.
         try:
             info = await sy.call("/api/block/getBlockInfo", id=id)
@@ -689,9 +704,9 @@ async def delete_doc(
                 id,
                 exc.code,
             )
-            return {"ok": True, "deleted_id": id, "already_absent": True}
+            return DeleteDocResult(ok=True, deleted_id=id, already_absent=True)
         if not info:
-            return {"ok": True, "deleted_id": id, "already_absent": True}
+            return DeleteDocResult(ok=True, deleted_id=id, already_absent=True)
 
         block_type = info.get("type") or info.get("type_", "")
         # getBlockInfo for documents typically returns rootID == id and the
@@ -717,7 +732,7 @@ async def delete_doc(
         )
         row = sql[0] if isinstance(sql, list) and sql else None
         if not row:
-            return {"ok": True, "deleted_id": id, "already_absent": True}
+            return DeleteDocResult(ok=True, deleted_id=id, already_absent=True)
 
         # 3. Optional safety: refuse to delete non-empty docs.
         if require_empty:
@@ -746,12 +761,12 @@ async def delete_doc(
             )
             result = None
 
-        return {
-            "ok": True,
-            "deleted_id": id,
-            "already_absent": False,
-            "result": result if isinstance(result, (dict, list)) else None,
-        }
+        return DeleteDocResult(
+            ok=True,
+            deleted_id=id,
+            already_absent=False,
+            result=result if isinstance(result, (dict, list)) else None,
+        )
 
     return await idempotency_cache.with_idempotency(
         "delete_doc", idempotency_key, _call
