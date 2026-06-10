@@ -311,7 +311,11 @@ async def test_doc_exists_found(mock_sy):
 
     mock_sy.call.return_value = [{"id": "doc-abc"}]
     result = await doc_exists(notebook="nb1", path="/Projects/Foo")
-    assert result == {"exists": True, "block_id": "doc-abc", "hpath": "/Projects/Foo"}
+    assert result.model_dump() == {
+        "exists": True,
+        "block_id": "doc-abc",
+        "hpath": "/Projects/Foo",
+    }
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "box = 'nb1'" in stmt
     assert "hpath = '/Projects/Foo'" in stmt
@@ -324,7 +328,11 @@ async def test_doc_exists_missing(mock_sy):
 
     mock_sy.call.return_value = []
     result = await doc_exists(notebook="nb1", path="/missing")
-    assert result == {"exists": False, "block_id": None, "hpath": "/missing"}
+    assert result.model_dump() == {
+        "exists": False,
+        "block_id": None,
+        "hpath": "/missing",
+    }
 
 
 @pytest.mark.asyncio
@@ -334,7 +342,7 @@ async def test_doc_exists_normalises_path(mock_sy):
 
     mock_sy.call.return_value = []
     result = await doc_exists(notebook="nb1", path="Projects/Foo")
-    assert result["hpath"] == "/Projects/Foo"
+    assert result.hpath == "/Projects/Foo"
 
 
 @pytest.mark.asyncio

@@ -5,12 +5,40 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any, Literal
 
+from fastmcp import Context
 from pydantic import Field
 
 from mcp_siyuan.client import sy
 from mcp_siyuan.idempotency import cache as idempotency_cache
+from mcp_siyuan.models import (
+    BulkAttrResult,
+    BulkDocResult,
+    DocUpsertResult,
+)
 
 logger = logging.getLogger(__name__)
+
+
+async def _ctx_info(ctx: Context | None, message: str) -> None:
+    """Best-effort ctx.info — never let observability break a tool call."""
+    if ctx is None:
+        return
+    try:
+        await ctx.info(message)
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("ctx.info failed", exc_info=True)
+
+
+async def _ctx_progress(
+    ctx: Context | None, progress: float, total: float, message: str | None = None
+) -> None:
+    """Best-effort ctx.report_progress — never let it break a tool call."""
+    if ctx is None:
+        return
+    try:
+        await ctx.report_progress(progress=progress, total=total, message=message)
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("ctx.report_progress failed", exc_info=True)
 
 
 def _wrap_result(result: Any) -> dict[str, Any]:
@@ -541,7 +569,7 @@ async def get_or_create_doc(
     markdown: str = "",
     update_if_exists: bool = False,
     idempotency_key: str | None = None,
-) -> dict[str, Any]:
+) -> DocUpsertResult:
     """[notes] Idempotent upsert of a document by ``notebook`` + ``path``.
 
     If a document already exists at the given path, return its block ID
@@ -571,7 +599,7 @@ async def get_or_create_doc(
     if any(c in (notebook + hpath) for c in ("'", '"', ";", "\n")):
         raise ValueError("notebook/path contain unsafe characters")
 
-    async def _call() -> dict[str, Any]:
+    async def _call() -> DocUpsertResult:
         lookup = await sy.call(
             "/api/query/sql",
             stmt=(
@@ -591,12 +619,12 @@ async def get_or_create_doc(
                     dataType="markdown",
                 )
                 was_updated = True
-            return {
-                "block_id": block_id,
-                "was_created": False,
-                "was_updated": was_updated,
-                "hpath": hpath,
-            }
+            return DocUpsertResult(
+                block_id=block_id,
+                was_created=False,
+                was_updated=was_updated,
+                hpath=hpath,
+            )
 
         data = await sy.call(
             "/api/filetree/createDocWithMd",
@@ -605,12 +633,12 @@ async def get_or_create_doc(
             markdown=markdown,
         )
         new_id = data if isinstance(data, str) else str(data)
-        return {
-            "block_id": new_id,
-            "was_created": True,
-            "was_updated": False,
-            "hpath": hpath,
-        }
+        return DocUpsertResult(
+            block_id=new_id,
+            was_created=True,
+            was_updated=False,
+            hpath=hpath,
+        )
 
     return await idempotency_cache.with_idempotency(
         "get_or_create_doc", idempotency_key, _call
@@ -735,7 +763,8 @@ _BULK_MAX = 50
 
 async def bulk_create_documents(
     documents: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    ctx: Context | None = None,
+) -> list[BulkDocResult]:
     """[notes] Create multiple documents in one call.
 
     Each item is processed independently — per-item failures do NOT abort
@@ -761,18 +790,21 @@ async def bulk_create_documents(
 
     from mcp_siyuan.client import SiYuanError
 
-    results: list[dict[str, Any]] = []
-    for item in documents:
+    total = len(documents)
+    await _ctx_info(ctx, f"Creating {total} document(s)")
+    results: list[BulkDocResult] = []
+    for idx, item in enumerate(documents, start=1):
         notebook = item.get("notebook", "")
         path = item.get("path", "")
         markdown = item.get("markdown", "")
         if not notebook or not path:
-            results.append({
-                "path": path,
-                "block_id": None,
-                "status": "error",
-                "error": "notebook and path are required",
-            })
+            results.append(BulkDocResult(
+                path=path,
+                block_id=None,
+                status="error",
+                error="notebook and path are required",
+            ))
+            await _ctx_progress(ctx, idx, total, path)
             continue
         try:
             data = await sy.call(
@@ -782,25 +814,27 @@ async def bulk_create_documents(
                 markdown=markdown,
             )
             new_id = data if isinstance(data, str) else str(data)
-            results.append({
-                "path": path,
-                "block_id": new_id,
-                "status": "ok",
-                "error": None,
-            })
+            results.append(BulkDocResult(
+                path=path,
+                block_id=new_id,
+                status="ok",
+                error=None,
+            ))
         except (SiYuanError, ValueError) as exc:
-            results.append({
-                "path": path,
-                "block_id": None,
-                "status": "error",
-                "error": str(exc),
-            })
+            results.append(BulkDocResult(
+                path=path,
+                block_id=None,
+                status="error",
+                error=str(exc),
+            ))
+        await _ctx_progress(ctx, idx, total, path)
     return results
 
 
 async def bulk_set_attrs(
     items: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    ctx: Context | None = None,
+) -> list[BulkAttrResult]:
     """[notes] Set attributes on multiple blocks in one call.
 
     Each item is processed independently — per-item failures do NOT abort
@@ -822,16 +856,19 @@ async def bulk_set_attrs(
 
     from mcp_siyuan.client import SiYuanError
 
-    results: list[dict[str, Any]] = []
-    for entry in items:
+    total = len(items)
+    await _ctx_info(ctx, f"Setting attributes on {total} block(s)")
+    results: list[BulkAttrResult] = []
+    for idx, entry in enumerate(items, start=1):
         block_id = entry.get("block_id", "")
         attrs = entry.get("attrs", {})
         if not block_id or not isinstance(attrs, dict):
-            results.append({
-                "block_id": block_id,
-                "status": "error",
-                "error": "block_id and attrs (dict) are required",
-            })
+            results.append(BulkAttrResult(
+                block_id=block_id,
+                status="error",
+                error="block_id and attrs (dict) are required",
+            ))
+            await _ctx_progress(ctx, idx, total, block_id)
             continue
         try:
             await sy.call(
@@ -839,17 +876,18 @@ async def bulk_set_attrs(
                 id=block_id,
                 attrs=attrs,
             )
-            results.append({
-                "block_id": block_id,
-                "status": "ok",
-                "error": None,
-            })
+            results.append(BulkAttrResult(
+                block_id=block_id,
+                status="ok",
+                error=None,
+            ))
         except (SiYuanError, ValueError) as exc:
-            results.append({
-                "block_id": block_id,
-                "status": "error",
-                "error": str(exc),
-            })
+            results.append(BulkAttrResult(
+                block_id=block_id,
+                status="error",
+                error=str(exc),
+            ))
+        await _ctx_progress(ctx, idx, total, block_id)
     return results
 
 

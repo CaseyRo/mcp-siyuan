@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Annotated, Any
 
+from fastmcp import Context
 from pydantic import Field
 
 from mcp_siyuan.client import sy
+from mcp_siyuan.models import DocExistsResult
+
+logger = logging.getLogger(__name__)
 
 # --- SQL safety helper ---
 
@@ -153,6 +158,7 @@ async def search_by_tag(tag: str) -> list[dict[str, Any]]:
 async def get_block_children(
     id: str,
     depth: Annotated[int, Field(ge=1, le=5)] = 2,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """[notes] Get a block and its child blocks as a tree structure.
 
@@ -170,9 +176,18 @@ async def get_block_children(
     all_blocks: dict[str, list[dict[str, Any]]] = {}  # parent_id -> children
     current_ids = [safe_id]
 
-    for _ in range(depth):
+    for level in range(depth):
         if not current_ids:
             break
+        if ctx is not None:
+            try:
+                await ctx.report_progress(
+                    progress=level + 1,
+                    total=depth,
+                    message=f"depth level {level + 1}/{depth}",
+                )
+            except Exception:  # pragma: no cover - defensive
+                logger.debug("ctx.report_progress failed", exc_info=True)
         id_list = ", ".join(f"'{_sanitize(cid)}'" for cid in current_ids)
         stmt = (
             f"SELECT id, content, type, sort, parent_id "
@@ -312,7 +327,7 @@ async def capture_task(
     }
 
 
-async def doc_exists(notebook: str, path: str) -> dict[str, Any]:
+async def doc_exists(notebook: str, path: str) -> DocExistsResult:
     """[notes] Check if a document exists at ``notebook`` + ``hpath``.
 
     Lightweight existence check that does not error on miss. Saves a follow-up
@@ -341,8 +356,8 @@ async def doc_exists(notebook: str, path: str) -> dict[str, Any]:
     data = await sy.call("/api/query/sql", stmt=stmt)
     rows = data if isinstance(data, list) else []
     if rows:
-        return {"exists": True, "block_id": rows[0].get("id"), "hpath": hpath}
-    return {"exists": False, "block_id": None, "hpath": hpath}
+        return DocExistsResult(exists=True, block_id=rows[0].get("id"), hpath=hpath)
+    return DocExistsResult(exists=False, block_id=None, hpath=hpath)
 
 
 async def get_document_outline(

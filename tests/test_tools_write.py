@@ -417,10 +417,10 @@ async def test_bulk_create_documents_mixed_results(mock_sy):
         {"notebook": "nb1", "path": "/b"},
         {"notebook": "nb1", "path": "/c"},
     ])
-    assert [r["status"] for r in results] == ["ok", "error", "ok"]
-    assert results[0]["block_id"] == "id-a"
-    assert "conflict" in (results[1]["error"] or "")
-    assert results[2]["block_id"] == "id-c"
+    assert [r.status for r in results] == ["ok", "error", "ok"]
+    assert results[0].block_id == "id-a"
+    assert "conflict" in (results[1].error or "")
+    assert results[2].block_id == "id-c"
 
 
 @pytest.mark.asyncio
@@ -433,8 +433,8 @@ async def test_bulk_create_documents_missing_fields(mock_sy):
         {"notebook": "", "path": "/a"},
         {"notebook": "nb1", "path": ""},
     ])
-    assert all(r["status"] == "error" for r in results)
-    assert "required" in (results[0]["error"] or "")
+    assert all(r.status == "error" for r in results)
+    assert "required" in (results[0].error or "")
 
 
 @pytest.mark.asyncio
@@ -466,8 +466,8 @@ async def test_bulk_set_attrs_mixed_results(mock_sy):
         {"block_id": "b1", "attrs": {"custom-x": "1"}},
         {"block_id": "b2", "attrs": {"custom-y": "2"}},
     ])
-    assert [r["status"] for r in results] == ["ok", "error"]
-    assert results[1]["block_id"] == "b2"
+    assert [r.status for r in results] == ["ok", "error"]
+    assert results[1].block_id == "b2"
 
 
 # --- upsert_section + append_to_section (CDI-1050 / CDI-1052) ---
@@ -659,10 +659,10 @@ async def test_get_or_create_doc_creates_when_missing(mock_sy):
     result = await get_or_create_doc(
         notebook="nb1", path="/Projects/New", markdown="# New"
     )
-    assert result["block_id"] == "new-doc-id"
-    assert result["was_created"] is True
-    assert result["was_updated"] is False
-    assert result["hpath"] == "/Projects/New"
+    assert result.block_id == "new-doc-id"
+    assert result.was_created is True
+    assert result.was_updated is False
+    assert result.hpath == "/Projects/New"
 
 
 @pytest.mark.asyncio
@@ -680,9 +680,9 @@ async def test_get_or_create_doc_returns_existing(mock_sy):
 
     mock_sy.call = mock_call
     result = await get_or_create_doc(notebook="nb1", path="/Existing")
-    assert result["block_id"] == "existing-id"
-    assert result["was_created"] is False
-    assert result["was_updated"] is False
+    assert result.block_id == "existing-id"
+    assert result.was_created is False
+    assert result.was_updated is False
     # No createDocWithMd call should have been made.
     assert "/api/filetree/createDocWithMd" not in [c[0] for c in calls]
 
@@ -707,8 +707,8 @@ async def test_get_or_create_doc_updates_existing(mock_sy):
         markdown="# Updated content",
         update_if_exists=True,
     )
-    assert result["was_created"] is False
-    assert result["was_updated"] is True
+    assert result.was_created is False
+    assert result.was_updated is True
     update_call = [c for c in calls if c[0] == "/api/block/updateBlock"]
     assert update_call and update_call[0][1]["data"] == "# Updated content"
 

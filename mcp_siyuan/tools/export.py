@@ -8,6 +8,7 @@ import re
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
+from fastmcp import Context
 from fastmcp.utilities.types import File
 from pydantic import Field
 
@@ -343,6 +344,7 @@ async def export_pdf(
         int,
         Field(ge=1, le=100, description="JPEG quality for embedded images (1-100)"),
     ] = 85,
+    ctx: Context | None = None,
 ):
     """[notes] Export a SiYuan document as PDF.
 
@@ -361,6 +363,17 @@ async def export_pdf(
     """
     _validate_id(id)
 
+    async def _emit(progress: float, message: str) -> None:
+        """Best-effort progress/log emission — never break the export."""
+        if ctx is None:
+            return
+        try:
+            await ctx.info(message)
+            await ctx.report_progress(progress=progress, total=3, message=message)
+        except Exception:  # pragma: no cover - defensive
+            logger.debug("ctx emit failed", exc_info=True)
+
+    await _emit(1, f"Fetching preview HTML for {id}")
     name, html = await _get_preview_html(id)
 
     html_size = len(html.encode("utf-8"))
@@ -371,7 +384,9 @@ async def export_pdf(
             "Use SiYuan's desktop app for very large documents."
         )
 
+    await _emit(2, f"Rendering PDF ({page_size} {orientation})")
     pdf_bytes = _render_pdf(html, orientation, page_size, image_quality)
+    await _emit(3, f"Rendered {len(pdf_bytes) // 1024} KB")
     pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
     size_kb = len(pdf_bytes) // 1024
 
