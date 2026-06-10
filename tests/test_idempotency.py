@@ -103,7 +103,9 @@ async def test_same_key_different_tools_no_collision(mock_sy):
     )
     b = await append_block(parent_id="b1", data="hi", idempotency_key="SHARED")
     assert a == "doc-id-X"
-    assert b == {"ok": True, "transactions": []}
+    # append_block now returns a typed WriteResult; the kernel dict is preserved.
+    assert b.ok is True
+    assert b.transactions == []
     assert mock_sy.call.call_count == 2
 
 

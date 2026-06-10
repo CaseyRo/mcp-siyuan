@@ -23,7 +23,7 @@ async def test_get_recent_docs(mock_sy):
     ]
     result = await get_recent_docs(limit=5)
     assert len(result) == 2
-    assert result[0]["title"] == "Meeting Notes"
+    assert result[0].title == "Meeting Notes"
 
 
 @pytest.mark.asyncio
@@ -47,8 +47,8 @@ async def test_find_tasks_open(mock_sy):
     ]
     result = await find_tasks()
     assert len(result) == 1
-    assert result[0]["content"] == "Buy groceries"
-    assert result[0]["doc_title"] == "Daily Note"
+    assert result[0].content == "Buy groceries"
+    assert result[0].doc_title == "Daily Note"
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "'t'" in stmt  # unchecked subtype
     assert "doc_title" in stmt  # JOIN for doc title
@@ -94,8 +94,8 @@ async def test_get_backlinks(mock_sy):
     }
     result = await get_backlinks(id="doc1")
     assert len(result) == 2
-    assert result[0]["content"] == "See also [[doc]]"
-    assert result[0]["doc_title"] == "Notes Document"
+    assert result[0].content == "See also [[doc]]"
+    assert result[0].doc_title == "Notes Document"
 
 
 @pytest.mark.asyncio
@@ -123,9 +123,10 @@ async def test_get_tags(mock_sy):
     }
     result = await get_tags()
     assert len(result) == 3
-    assert {"tag": "cars", "count": 5} in result
-    assert {"tag": "cars/porsche", "count": 3} in result
-    assert {"tag": "wishlist", "count": 2} in result
+    flat = {(t.tag, t.count) for t in result}
+    assert ("cars", 5) in flat
+    assert ("cars/porsche", 3) in flat
+    assert ("wishlist", 2) in flat
 
 
 @pytest.mark.asyncio
@@ -148,7 +149,7 @@ async def test_search_by_tag(mock_sy):
     ]
     result = await search_by_tag(tag="porsche")
     assert len(result) == 1
-    assert result[0]["content"] == "911 GT3 RS"
+    assert result[0].content == "911 GT3 RS"
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "porsche" in stmt
 
@@ -187,10 +188,10 @@ async def test_get_block_children(mock_sy):
 
     mock_sy.call = mock_call
     result = await get_block_children(id="doc1", depth=2)
-    assert result["id"] == "doc1"
-    assert result["type"] == "d"
-    assert len(result["children"]) == 2
-    assert result["children"][0]["content"] == "Heading 1"
+    assert result.id == "doc1"
+    assert result.type == "d"
+    assert len(result.children) == 2
+    assert result.children[0]["content"] == "Heading 1"
     # With batch queries: 1 query for depth 1, 1 for depth 2 (h1+p1 children),
     # 1 for getBlockInfo = 3 total, NOT 1+N+1
     assert call_count == 3
@@ -222,9 +223,8 @@ async def test_search_with_context(mock_sy):
     mock_sy.call = mock_call
     result = await search_with_context(query="Porsche", context_blocks=1)
     assert len(result) == 1
-    assert result[0]["content"] == "Porsche 911"
-    assert "context" in result[0]
-    assert len(result[0]["context"]) == 3  # b1, b2, b3
+    assert result[0].content == "Porsche 911"
+    assert len(result[0].context) == 3  # b1, b2, b3
 
 
 @pytest.mark.asyncio
@@ -239,7 +239,8 @@ async def test_search_with_context_no_context(mock_sy):
     }
     result = await search_with_context(query="test", context_blocks=0)
     assert len(result) == 1
-    assert "context" not in result[0]
+    # With context_blocks=0, no siblings are fetched; context defaults to [].
+    assert result[0].context == []
 
 
 @pytest.mark.asyncio
@@ -262,9 +263,9 @@ async def test_capture_task(mock_sy):
 
     mock_sy.call = mock_call
     result = await capture_task(text="Buy groceries")
-    assert result["ok"] is True
-    assert result["daily_note_id"] == "daily-id-123"
-    assert result["task"] == "Buy groceries"
+    assert result.ok is True
+    assert result.daily_note_id == "daily-id-123"
+    assert result.task == "Buy groceries"
 
 
 @pytest.mark.asyncio
@@ -283,7 +284,7 @@ async def test_capture_task_with_notebook(mock_sy):
 
     mock_sy.call = mock_call
     result = await capture_task(text="Do stuff", notebook="nb2")
-    assert result["ok"] is True
+    assert result.ok is True
     assert "/api/notebook/lsNotebooks" not in calls
 
 
@@ -299,7 +300,8 @@ async def test_get_document_outline(mock_sy):
     ]
     result = await get_document_outline(id="doc1")
     assert len(result) == 3
-    assert result[0]["content"] == "Introduction"
+    assert result[0].content == "Introduction"
+    assert result[0].level == "h1"
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "type = 'h'" in stmt
 
@@ -311,7 +313,10 @@ async def test_doc_exists_found(mock_sy):
 
     mock_sy.call.return_value = [{"id": "doc-abc"}]
     result = await doc_exists(notebook="nb1", path="/Projects/Foo")
-    assert result == {"exists": True, "block_id": "doc-abc", "hpath": "/Projects/Foo"}
+    assert result.exists is True
+    assert result.block_id == "doc-abc"
+    assert result.hpath == "/Projects/Foo"
+    assert result.error is None
     stmt = mock_sy.call.call_args.kwargs["stmt"]
     assert "box = 'nb1'" in stmt
     assert "hpath = '/Projects/Foo'" in stmt
@@ -324,7 +329,10 @@ async def test_doc_exists_missing(mock_sy):
 
     mock_sy.call.return_value = []
     result = await doc_exists(notebook="nb1", path="/missing")
-    assert result == {"exists": False, "block_id": None, "hpath": "/missing"}
+    assert result.exists is False
+    assert result.block_id is None
+    assert result.hpath == "/missing"
+    assert result.error is None
 
 
 @pytest.mark.asyncio
@@ -334,7 +342,7 @@ async def test_doc_exists_normalises_path(mock_sy):
 
     mock_sy.call.return_value = []
     result = await doc_exists(notebook="nb1", path="Projects/Foo")
-    assert result["hpath"] == "/Projects/Foo"
+    assert result.hpath == "/Projects/Foo"
 
 
 @pytest.mark.asyncio
