@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from mcp_siyuan import __version__
 from mcp_siyuan.auth import BearerTokenVerifier
 from mcp_siyuan.client import sy
 from mcp_siyuan.config import settings
+from mcp_siyuan.models import OutlineHeading
 from mcp_siyuan.observability import diag_buffer
 from mcp_siyuan.observability.logging_setup import configure_logging
 from mcp_siyuan.observability.tracing import traced_tool
@@ -262,6 +264,38 @@ def schema_resource() -> str:
 async def notebooks_resource() -> list[dict]:
     """Live notebook catalog so the model resolves IDs without a tool call."""
     return await list_notebooks()
+
+
+@mcp.resource(
+    "siyuan://doc/{doc_id}/outline",
+    name="SiYuan document outline",
+    description=(
+        "Heading-only outline (id, content, level, sort) for a document, "
+        "addressed by its block ID. Mirrors siyuan_get_document_outline."
+    ),
+    mime_type="application/json",
+    tags={"reference", "read"},
+    annotations={"readOnlyHint": True, "idempotentHint": True},
+)
+async def doc_outline_resource(doc_id: str) -> str:
+    """Resource-template view of a document's heading outline.
+
+    Reuses ``get_document_outline`` so the resource and the tool stay in lockstep.
+    Pure read — never mutates. Error-path-safe: an invalid/unsafe ``doc_id`` or a
+    kernel hiccup yields a single ``[{"error": ...}]`` row instead of raising, so
+    a client resource-read degrades to a readable JSON payload rather than a
+    transport fault.
+
+    Returns a JSON-encoded array of heading rows (id, content, level, sort) so
+    the whole outline is one ``application/json`` document.
+    """
+    try:
+        headings = await get_document_outline(doc_id)
+        rows = [h.model_dump() for h in headings]
+    except Exception as exc:  # ValueError (unsafe id), SiYuanError, transport, ...
+        logger.info("doc_outline_resource failed for %r: %s", doc_id, exc)
+        rows = [OutlineHeading(error=str(exc)).model_dump()]
+    return json.dumps(rows, default=str)
 
 
 @mcp.resource(

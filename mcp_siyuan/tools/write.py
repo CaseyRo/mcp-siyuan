@@ -45,6 +45,57 @@ async def _ctx_progress(
         logger.debug("ctx.report_progress failed", exc_info=True)
 
 
+async def _confirm_destructive(ctx: Context | None, message: str) -> bool:
+    """Best-effort confirmation gate before a destructive operation.
+
+    Returns ``True`` when the caller should PROCEED with the operation and
+    ``False`` when it should ABORT.
+
+    Defensive by design — elicitation is an optional MCP capability and many
+    clients/portals (including the manually-synced Cloudflare MCP Portal) do
+    NOT support it. The contract:
+
+    * No ``ctx`` available (e.g. unit tests, stdio without a session) → proceed.
+      The ``destructiveHint`` annotation already warns the client.
+    * ``ctx.elicit`` raises because the client can't elicit (capability missing,
+      transport error, timeout, deprecation guard, etc.) → proceed. We must
+      NEVER let an unsupported confirmation break an otherwise-valid delete.
+    * Elicitation succeeds and the user ACCEPTS → proceed.
+    * Elicitation succeeds and the user DECLINES or CANCELS → abort gracefully
+      (the caller returns a clear "cancelled" result, not an opaque error).
+
+    The elicited ``response_type`` is a bare ``bool`` so the client renders a
+    simple yes/no confirmation; an explicit ``False`` value is treated as a
+    decline (abort).
+    """
+    if ctx is None:
+        return True
+
+    elicit = getattr(ctx, "elicit", None)
+    if elicit is None:  # pragma: no cover - very old/limited Context
+        return True
+
+    try:
+        result = await elicit(message=message, response_type=bool)
+    except Exception:
+        # Client does not support elicitation (or it failed in transit).
+        # Degrade gracefully: proceed, relying on the destructiveHint warning.
+        logger.info(
+            "elicitation unavailable; proceeding with destructive op without "
+            "interactive confirmation",
+            exc_info=True,
+        )
+        return True
+
+    action = getattr(result, "action", None)
+    if action == "accept":
+        # An explicit `False` answer means "do not delete".
+        data = getattr(result, "data", True)
+        return bool(data) if data is not None else True
+    # "decline" or "cancel" → abort.
+    return False
+
+
 def _wrap_result(result: Any) -> WriteResult:
     """Normalise SiYuan write responses to a typed ``WriteResult``.
 
@@ -89,15 +140,33 @@ async def rename_notebook(notebook: str, name: str) -> WriteResult:
     return _wrap_result(result)
 
 
-async def remove_notebook(notebook: str) -> WriteResult:
+async def remove_notebook(
+    notebook: str,
+    ctx: Context | None = None,
+) -> WriteResult:
     """[notes] Remove a notebook and all its documents.
 
     This permanently removes the notebook. Use with caution — deletion cannot
     be undone via the API (only via SiYuan's in-app undo).
 
+    When the client supports elicitation, this asks for an interactive
+    confirmation before removing the notebook. Clients that cannot elicit
+    proceed without prompting (the destructive annotation already warns).
+
     Args:
         notebook: Notebook ID to remove.
     """
+    if not await _confirm_destructive(
+        ctx,
+        f"Permanently remove notebook {notebook} and ALL its documents? "
+        "This cannot be undone via the API.",
+    ):
+        return WriteResult(
+            ok=False,
+            cancelled=True,
+            error="cancelled: user declined to remove the notebook",
+        )
+
     result = await sy.call(
         "/api/notebook/removeNotebook",
         notebook=notebook,
@@ -253,6 +322,7 @@ async def append_block(
 async def delete_block(
     id: str,
     idempotency_key: str | None = None,
+    ctx: Context | None = None,
 ) -> DeleteBlockResult:
     """[notes] Delete a block by ID.
 
@@ -262,6 +332,10 @@ async def delete_block(
     Idempotent: re-deleting an already-missing block returns success rather
     than an error, so callers can safely retry without side effects.
 
+    When the client supports elicitation, this asks for an interactive
+    confirmation before deleting. Clients that cannot elicit proceed without
+    prompting (the destructive annotation already warns).
+
     Args:
         id: The block ID to delete.
         idempotency_key: Optional replay-cache key (see create_document).
@@ -269,6 +343,16 @@ async def delete_block(
             returns the prior result without a new kernel call.
     """
     from mcp_siyuan.client import SiYuanError
+
+    if not await _confirm_destructive(
+        ctx,
+        f"Permanently delete block {id}? This cannot be undone via the API.",
+    ):
+        return DeleteBlockResult(
+            ok=False,
+            cancelled=True,
+            error="cancelled: user declined to delete the block",
+        )
 
     async def _call() -> DeleteBlockResult:
         try:
@@ -664,6 +748,7 @@ async def delete_doc(
     id: str,
     require_empty: bool = False,
     idempotency_key: str | None = None,
+    ctx: Context | None = None,
 ) -> DeleteDocResult:
     """[notes] Delete a document by its block ID.
 
@@ -690,8 +775,24 @@ async def delete_doc(
     Raises:
         ValueError: If ``id`` does not refer to a document-type block, or
             ``require_empty=True`` and the doc still has children.
+
+    When the client supports elicitation, this asks for an interactive
+    confirmation before deleting. Clients that cannot elicit proceed without
+    prompting (the destructive annotation already warns).
     """
     from mcp_siyuan.client import SiYuanError
+
+    if not await _confirm_destructive(
+        ctx,
+        f"Permanently delete document {id} and all its content? "
+        "This cannot be undone via the API.",
+    ):
+        return DeleteDocResult(
+            ok=False,
+            deleted_id=id,
+            cancelled=True,
+            error="cancelled: user declined to delete the document",
+        )
 
     async def _call() -> DeleteDocResult:
         # 1. Verify the block exists and is a document.
