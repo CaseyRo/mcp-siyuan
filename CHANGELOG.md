@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.20] - 2026-06-10
+
+- feat(siyuan): tags + defensive elicit on deletes + doc-outline resource template (shelf) (#27)
+
+
 ## [0.2.18] - 2026-06-10
 
 - feat: fastmcp 3.4.2 uplift — annotations, structured output, resources, prompts, context (#26)

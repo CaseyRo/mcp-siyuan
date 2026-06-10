@@ -1,6 +1,6 @@
 [project]
 name = "mcp-siyuan"
-version = "0.2.19"
+version = "0.2.20"
 description = "MCP server for SiYuan Notes built on FastMCP"
 readme = "README.md"
 license = "MIT"
