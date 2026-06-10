@@ -100,6 +100,29 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 
 The hand-written catalog is kept honest by `tests/test_readme_tool_catalog.py`, which fails CI if a registered tool isn't documented here.
 
+### Tool annotations & structured output
+
+Every tool is registered with [tool annotations](https://gofastmcp.com/) (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`, and a human-friendly `title`) plus tags (`read` / `write` / `smart` / `destructive` / `export`) so clients can auto-approve safe reads and gate only true destructive ops. Tools that returned structured dicts now return typed Pydantic models (`DocUpsertResult`, `DocExistsResult`, `BulkDocResult`, `BulkAttrResult`), so FastMCP advertises an `output_schema` and emits structured content. The wire-level JSON keys are unchanged from the previous prose `Returns:` contracts.
+
+### Resources
+
+Fetch-once reference data, exposed under the `siyuan://` URI scheme:
+
+| Resource | Description |
+|----------|-------------|
+| `siyuan://schema` | SQL column legend + block-type codes for `siyuan_sql_query` (authoritative, single source). |
+| `siyuan://notebooks` | Live notebook list (`id`, `name`, `closed`) — resolve IDs without a tool call. |
+| `siyuan://status` | Server version, transport, and cached upstream-kernel reachability. |
+
+### Prompts
+
+Guided multi-step workflows:
+
+| Prompt | Description |
+|--------|-------------|
+| `daily_review` | Combine `get_recent_docs` + `find_tasks(checked=False)` into a read-only review of recent work and open TODOs. Args: `notebook`, `days`. |
+| `process_inbox` | Walk a notebook's recent docs, summarize each, extract actions, and propose routing. Args: `notebook`, `limit`. |
+
 ---
 
 ## Transport Architecture
@@ -120,7 +143,9 @@ For deeper FastMCP protocol detail, see the [FastMCP docs](https://gofastmcp.com
 
 This repo follows a small set of conventions worth knowing if you're contributing:
 
-- **Tool registration is explicit** in `mcp_siyuan/server.py`: every tool function is wrapped by `traced_tool(...)` and then handed to `mcp.tool(...)`. The wrapper preserves `__name__` and `__doc__` so FastMCP can introspect the schema.
+- **Tool registration is explicit** in `mcp_siyuan/server.py`: a small `_register(...)` helper wraps each tool function with `traced_tool(...)`, attaches `ToolAnnotations` (read-only / destructive / idempotent / open-world + title) and tags, and hands it to `mcp.tool(...)`. The wrapper preserves `__name__`, `__doc__`, and the full signature (including any injected `ctx: Context`) so FastMCP can introspect the schema.
+- **Server instructions** (`FastMCP(instructions=...)`) orient clients on the SiYuan sidecar model and the SQL-first query pattern.
+- **Context-aware tools**: long-running / batch tools (`bulk_create_documents`, `bulk_set_attrs`, `get_block_children`, `export_pdf`) accept an optional `ctx: Context` and emit `ctx.info` / `ctx.report_progress` events. Context emission is best-effort and never breaks the tool call.
 - **Auth uses a `TokenVerifier`** subclass (`mcp_siyuan/auth.py`). HMAC-compared static bearer (the `MCP_API_KEY`). Required in HTTP mode; the server refuses to start without it.
 - **The `/health` endpoint** is registered with `@mcp.custom_route("/health", methods=["GET"])`. It probes the upstream SiYuan kernel with a 30-second cache (configurable via `UPSTREAM_PROBE_INTERVAL`). Pass `?diag=1` to also dump the recent-tool-call ring buffer (see Operator Runbook).
 - **Error propagation**: tools raise normal exceptions (`SiYuanError`, `ValueError`, etc.). FastMCP catches and converts them to MCP error payloads. The `traced_tool` wrapper appends `[request_id=...]` to the error message so clients can correlate.
@@ -230,7 +255,7 @@ Once you have a `request_id` from a failure, the next investigation steps live o
 
 ### FastMCP version pin
 
-`fastmcp` is pinned to `==3.2.4` in `pyproject.toml`. This is intentional while the No-approval-received root-cause investigation is open — a known-fixed framework version makes the upstream investigation tractable. The startup banner logs `fastmcp_version`; if it ever drifts from the pin, the server emits an `ERROR` log line but does not crash. Do not relax the pin without coordinating with the team.
+`fastmcp` is constrained to `>=3.4.2,<4.0.0` in `pyproject.toml`. The previous `==3.2.4` RCA pin (No-approval-received investigation) has been lifted; 3.4.2 adds the annotation / structured-output / resource ergonomics this server now relies on. The startup banner logs `fastmcp_version`; if the installed **major** ever drifts outside the range, the server emits an `ERROR` log line but does not crash. Do not bump across the `<4.0.0` ceiling without coordinating with the team.
 
 ---
 

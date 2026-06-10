@@ -8,12 +8,13 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from mcp_siyuan.client import sy
+from mcp_siyuan.models import BlockInfo, NotebookInfo, SearchHit, SqlRow
 
 _ALLOWED_STMT_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
 _MAX_SQL_ROWS = 200
 
 
-async def list_notebooks() -> list[dict[str, Any]]:
+async def list_notebooks() -> list[NotebookInfo]:
     """[notes] List all notebooks in the SiYuan workspace.
 
     Use this first to discover notebook IDs before creating documents or daily notes.
@@ -23,10 +24,10 @@ async def list_notebooks() -> list[dict[str, Any]]:
 
     data = await sy.call("/api/notebook/lsNotebooks")
     raw = data.get("notebooks", []) if data else []
-    return [Notebook(**nb).model_dump() for nb in raw]
+    return [NotebookInfo(**Notebook(**nb).model_dump()) for nb in raw]
 
 
-async def sql_query(stmt: str) -> list[dict[str, Any]]:
+async def sql_query(stmt: str) -> list[SqlRow]:
     """[notes] Execute a read-only SQL SELECT against SiYuan's internal database.
 
     Only SELECT statements are permitted. A LIMIT is enforced if not provided.
@@ -48,7 +49,8 @@ async def sql_query(stmt: str) -> list[dict[str, Any]]:
     if not re.search(r"\bLIMIT\s+\d+", stmt, re.IGNORECASE):
         stmt = stmt.rstrip("; \t\n") + f" LIMIT {_MAX_SQL_ROWS}"
     data = await sy.call("/api/query/sql", stmt=stmt)
-    return data if isinstance(data, list) else []
+    rows = data if isinstance(data, list) else []
+    return [SqlRow(**row) for row in rows]
 
 
 async def get_document(
@@ -71,7 +73,7 @@ async def get_document(
 async def search(
     query: str,
     limit: Annotated[int, Field(ge=1, le=100)] = 20,
-) -> list[dict[str, Any]]:
+) -> list[SearchHit]:
     """[notes] Quick full-text search across all SiYuan content (no surrounding context).
 
     Disambiguation: For notes/documents → siyuan. For social media posts → zernio. For blog/writing content → writings.
@@ -92,13 +94,13 @@ async def search(
     )
     blocks = data.get("blocks", []) if data else []
     return [
-        {
-            "id": b.get("id", ""),
-            "content": b.get("content", ""),
-            "root_id": b.get("rootID", ""),
-            "box": b.get("box", ""),
-            "hpath": b.get("hPath", ""),
-        }
+        SearchHit(
+            id=b.get("id", ""),
+            content=b.get("content", ""),
+            root_id=b.get("rootID", ""),
+            box=b.get("box", ""),
+            hpath=b.get("hPath", ""),
+        )
         for b in blocks
     ]
 
@@ -106,7 +108,7 @@ async def search(
 _BLOCK_FIELDS = ("id", "type", "content", "parent_id", "root_id", "box", "hpath", "updated")
 
 
-async def get_block(id: str) -> dict[str, Any]:
+async def get_block(id: str) -> BlockInfo:
     """[notes] Get a single block's content and metadata by ID.
 
     Returns block content and metadata (id, type, content, parent_id). For custom
@@ -120,14 +122,14 @@ async def get_block(id: str) -> dict[str, Any]:
     """
     data = await sy.call("/api/block/getBlockInfo", id=id)
     if not data:
-        return {"error": f"Block {id} not found"}
+        return BlockInfo(error=f"Block {id} not found")
     # Normalise field names and project only useful fields
     normalised: dict[str, Any] = {}
     for key in _BLOCK_FIELDS:
         # SiYuan uses camelCase for some fields in this endpoint
         camel = {"parent_id": "parentID", "root_id": "rootID", "hpath": "hPath"}.get(key, key)
         normalised[key] = data.get(key) or data.get(camel, "")
-    return normalised
+    return BlockInfo(**normalised)
 
 
 async def get_block_attrs(id: str) -> dict[str, str]:

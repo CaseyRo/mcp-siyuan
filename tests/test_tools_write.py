@@ -21,7 +21,8 @@ async def test_create_notebook(mock_sy):
         "notebook": {"id": "20260326100000-abc1234", "name": "Test Notebook"}
     }
     result = await create_notebook(name="Test Notebook")
-    assert result["notebook"]["id"] == "20260326100000-abc1234"
+    # The kernel's notebook object is preserved verbatim via extra="allow".
+    assert result.model_dump()["notebook"]["id"] == "20260326100000-abc1234"
     mock_sy.call.assert_called_once_with(
         "/api/notebook/createNotebook",
         name="Test Notebook",
@@ -35,7 +36,7 @@ async def test_create_notebook_null_response(mock_sy):
 
     mock_sy.call.return_value = None
     result = await create_notebook(name="Another Notebook")
-    assert result == {"ok": True}
+    assert result.ok is True
 
 
 @pytest.mark.asyncio
@@ -45,7 +46,7 @@ async def test_rename_notebook(mock_sy):
 
     mock_sy.call.return_value = None
     result = await rename_notebook(notebook="nb1", name="New Name")
-    assert result == {"ok": True}
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/notebook/renameNotebook",
         notebook="nb1",
@@ -60,7 +61,7 @@ async def test_remove_notebook(mock_sy):
 
     mock_sy.call.return_value = None
     result = await remove_notebook(notebook="nb1")
-    assert result == {"ok": True}
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/notebook/removeNotebook",
         notebook="nb1",
@@ -102,8 +103,8 @@ async def test_update_block(mock_sy):
 
     mock_sy.call.return_value = [{"doOperations": [{"action": "update"}]}]
     result = await update_block(id="b1", data="updated text")
-    assert result["ok"] is True
-    assert "transactions" in result
+    assert result.ok is True
+    assert result.transactions == [{"doOperations": [{"action": "update"}]}]
     mock_sy.call.assert_called_once_with(
         "/api/block/updateBlock",
         id="b1",
@@ -200,7 +201,7 @@ async def test_delete_block(mock_sy):
 
     mock_sy.call.return_value = [{"doOperations": [{"action": "delete"}]}]
     result = await delete_block(id="b1")
-    assert result["ok"] is True
+    assert result.ok is True
     mock_sy.call.assert_called_once_with("/api/block/deleteBlock", id="b1")
 
 
@@ -212,8 +213,8 @@ async def test_delete_block_already_absent(mock_sy):
 
     mock_sy.call.side_effect = SiYuanError("block not found", code=-1)
     result = await delete_block(id="missing-block")
-    assert result["ok"] is True
-    assert result.get("already_absent") is True
+    assert result.ok is True
+    assert result.already_absent is True
 
 
 @pytest.mark.asyncio
@@ -228,8 +229,8 @@ async def test_delete_block_idempotency_key(mock_sy):
     result1 = await delete_block(id="b2", idempotency_key="del-b2-v1")
     result2 = await delete_block(id="b2", idempotency_key="del-b2-v1")
 
-    assert result1["ok"] is True
-    assert result2["ok"] is True
+    assert result1.ok is True
+    assert result2.ok is True
     # Second call hits cache — kernel is only called once
     mock_sy.call.assert_called_once()
 
@@ -255,7 +256,7 @@ async def test_move_doc_single(mock_sy):
 
     mock_sy.call.return_value = None
     result = await move_doc(from_ids=["doc1"], to_id="notebook1")
-    assert result == {"ok": True}
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/filetree/moveDocsByID",
         fromIDs=["doc1"],
@@ -270,7 +271,7 @@ async def test_move_doc_multiple(mock_sy):
 
     mock_sy.call.return_value = None
     result = await move_doc(from_ids=["doc1", "doc2"], to_id="parent-doc")
-    assert result == {"ok": True}
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/filetree/moveDocsByID",
         fromIDs=["doc1", "doc2"],
@@ -285,7 +286,7 @@ async def test_rename_doc(mock_sy):
 
     mock_sy.call.return_value = None
     result = await rename_doc(id="doc1", title="New Title")
-    assert result == {"ok": True}
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/filetree/renameDocByID",
         id="doc1",
@@ -300,7 +301,7 @@ async def test_move_block_previous(mock_sy):
 
     mock_sy.call.return_value = [{"doOperations": [{"action": "move"}]}]
     result = await move_block(id="block1", previous_id="sibling1")
-    assert result["ok"] is True
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/block/moveBlock",
         id="block1",
@@ -316,7 +317,7 @@ async def test_move_block_parent(mock_sy):
 
     mock_sy.call.return_value = [{"doOperations": [{"action": "move"}]}]
     result = await move_block(id="block1", parent_id="parent1")
-    assert result["ok"] is True
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/block/moveBlock",
         id="block1",
@@ -334,7 +335,7 @@ async def test_move_block_both(mock_sy):
     result = await move_block(
         id="block1", previous_id="sibling1", parent_id="parent1"
     )
-    assert result["ok"] is True
+    assert result.ok is True
     mock_sy.call.assert_called_once_with(
         "/api/block/moveBlock",
         id="block1",
@@ -417,10 +418,10 @@ async def test_bulk_create_documents_mixed_results(mock_sy):
         {"notebook": "nb1", "path": "/b"},
         {"notebook": "nb1", "path": "/c"},
     ])
-    assert [r["status"] for r in results] == ["ok", "error", "ok"]
-    assert results[0]["block_id"] == "id-a"
-    assert "conflict" in (results[1]["error"] or "")
-    assert results[2]["block_id"] == "id-c"
+    assert [r.status for r in results] == ["ok", "error", "ok"]
+    assert results[0].block_id == "id-a"
+    assert "conflict" in (results[1].error or "")
+    assert results[2].block_id == "id-c"
 
 
 @pytest.mark.asyncio
@@ -433,8 +434,8 @@ async def test_bulk_create_documents_missing_fields(mock_sy):
         {"notebook": "", "path": "/a"},
         {"notebook": "nb1", "path": ""},
     ])
-    assert all(r["status"] == "error" for r in results)
-    assert "required" in (results[0]["error"] or "")
+    assert all(r.status == "error" for r in results)
+    assert "required" in (results[0].error or "")
 
 
 @pytest.mark.asyncio
@@ -466,8 +467,8 @@ async def test_bulk_set_attrs_mixed_results(mock_sy):
         {"block_id": "b1", "attrs": {"custom-x": "1"}},
         {"block_id": "b2", "attrs": {"custom-y": "2"}},
     ])
-    assert [r["status"] for r in results] == ["ok", "error"]
-    assert results[1]["block_id"] == "b2"
+    assert [r.status for r in results] == ["ok", "error"]
+    assert results[1].block_id == "b2"
 
 
 # --- upsert_section + append_to_section (CDI-1050 / CDI-1052) ---
@@ -509,9 +510,9 @@ async def test_upsert_section_replaces_existing(mock_sy):
         section_heading="Project Identity",
         markdown="New content here",
     )
-    assert result["ok"] is True
-    assert result["action"] == "replaced"
-    assert result["heading_id"] == "h1"
+    assert result.ok is True
+    assert result.action == "replaced"
+    assert result.heading_id == "h1"
 
     deletes = [c for c in calls if c[0] == "/api/block/deleteBlock"]
     # Section content under h1 (subtype h2) runs until h3 (subtype h2):
@@ -545,7 +546,7 @@ async def test_upsert_section_creates_when_missing(mock_sy):
         markdown="Body",
         heading_level=2,
     )
-    assert result["action"] == "created"
+    assert result.action == "created"
     appends = [c for c in calls if c[0] == "/api/block/appendBlock"]
     assert appends
     appended = appends[0][1]["data"]
@@ -570,8 +571,8 @@ async def test_upsert_section_case_and_whitespace_tolerant(mock_sy):
         section_heading="  project   IDENTITY ",
         markdown="X",
     )
-    assert result["action"] == "replaced"
-    assert result["heading_id"] == "h1"
+    assert result.action == "replaced"
+    assert result.heading_id == "h1"
 
 
 @pytest.mark.asyncio
@@ -593,9 +594,9 @@ async def test_append_to_section_inserts_after_last_block(mock_sy):
         section_heading="Project Identity",
         markdown="appended line",
     )
-    assert result["ok"] is True
+    assert result.ok is True
     # Last block of "Project Identity" section is p2 (h2 ends section).
-    assert result["anchor_id"] == "p2"
+    assert result.anchor_id == "p2"
     inserts = [c for c in calls if c[0] == "/api/block/insertBlock"]
     assert inserts and inserts[0][1]["previousID"] == "p2"
     assert inserts[0][1]["data"] == "appended line"
@@ -636,7 +637,7 @@ async def test_append_to_section_empty_section(mock_sy):
     result = await append_to_section(
         doc_id="doc1", section_heading="Empty", markdown="first"
     )
-    assert result["anchor_id"] == "h-only"
+    assert result.anchor_id == "h-only"
 
 
 # --- get_or_create_doc (CDI-1051) ---
@@ -659,10 +660,10 @@ async def test_get_or_create_doc_creates_when_missing(mock_sy):
     result = await get_or_create_doc(
         notebook="nb1", path="/Projects/New", markdown="# New"
     )
-    assert result["block_id"] == "new-doc-id"
-    assert result["was_created"] is True
-    assert result["was_updated"] is False
-    assert result["hpath"] == "/Projects/New"
+    assert result.block_id == "new-doc-id"
+    assert result.was_created is True
+    assert result.was_updated is False
+    assert result.hpath == "/Projects/New"
 
 
 @pytest.mark.asyncio
@@ -680,9 +681,9 @@ async def test_get_or_create_doc_returns_existing(mock_sy):
 
     mock_sy.call = mock_call
     result = await get_or_create_doc(notebook="nb1", path="/Existing")
-    assert result["block_id"] == "existing-id"
-    assert result["was_created"] is False
-    assert result["was_updated"] is False
+    assert result.block_id == "existing-id"
+    assert result.was_created is False
+    assert result.was_updated is False
     # No createDocWithMd call should have been made.
     assert "/api/filetree/createDocWithMd" not in [c[0] for c in calls]
 
@@ -707,8 +708,8 @@ async def test_get_or_create_doc_updates_existing(mock_sy):
         markdown="# Updated content",
         update_if_exists=True,
     )
-    assert result["was_created"] is False
-    assert result["was_updated"] is True
+    assert result.was_created is False
+    assert result.was_updated is True
     update_call = [c for c in calls if c[0] == "/api/block/updateBlock"]
     assert update_call and update_call[0][1]["data"] == "# Updated content"
 
@@ -745,9 +746,9 @@ async def test_delete_doc_happy_path(mock_sy):
 
     mock_sy.call = mock_call
     result = await delete_doc(id="doc1")
-    assert result["ok"] is True
-    assert result["deleted_id"] == "doc1"
-    assert result["already_absent"] is False
+    assert result.ok is True
+    assert result.deleted_id == "doc1"
+    assert result.already_absent is False
     # removeDocByID must have been called with the id.
     endpoints = [c[0] for c in calls]
     assert "/api/filetree/removeDocByID" in endpoints
@@ -771,7 +772,7 @@ async def test_delete_doc_no_sql_verify_after_remove(mock_sy):
 
     mock_sy.call = mock_call
     result = await delete_doc(id="doc1")
-    assert result["ok"] is True
+    assert result.ok is True
 
     # Verify call sequence: getBlockInfo, then SQL lookup, then removeDocByID,
     # and NO SQL probe after removeDocByID.
@@ -800,9 +801,9 @@ async def test_delete_doc_already_absent_on_lookup(mock_sy):
 
     mock_sy.call.side_effect = SiYuanError("ID does not exist", code=-1)
     result = await delete_doc(id="missing-doc")
-    assert result["ok"] is True
-    assert result["already_absent"] is True
-    assert result["deleted_id"] == "missing-doc"
+    assert result.ok is True
+    assert result.already_absent is True
+    assert result.deleted_id == "missing-doc"
 
 
 @pytest.mark.asyncio

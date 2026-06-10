@@ -25,8 +25,8 @@ async def test_list_notebooks(mock_sy):
     }
     result = await list_notebooks()
     assert len(result) == 2
-    assert result[0]["name"] == "Work"
-    assert result[1]["closed"] is True
+    assert result[0].name == "Work"
+    assert result[1].closed is True
     mock_sy.call.assert_called_once_with("/api/notebook/lsNotebooks")
 
 
@@ -41,7 +41,7 @@ async def test_sql_query(mock_sy):
     ]
     result = await sql_query(stmt="SELECT id, content FROM blocks LIMIT 2")
     assert len(result) == 2
-    assert result[0]["content"] == "TODO: fix tests"
+    assert result[0].content == "TODO: fix tests"
 
 
 @pytest.mark.asyncio
@@ -138,8 +138,8 @@ async def test_search(mock_sy):
     }
     result = await search(query="meeting")
     assert len(result) == 1
-    assert result[0]["id"] == "b1"
-    assert result[0]["hpath"] == "/notes"
+    assert result[0].id == "b1"
+    assert result[0].hpath == "/notes"
 
 
 @pytest.mark.asyncio
@@ -164,11 +164,12 @@ async def test_get_block(mock_sy):
         "internalField": "should be dropped",
     }
     result = await get_block(id="b1")
-    assert result["type"] == "p"
-    assert result["parent_id"] == "doc1"
-    assert result["root_id"] == "r1"
-    assert result["hpath"] == "/notes"
-    assert "internalField" not in result
+    assert result.type == "p"
+    assert result.parent_id == "doc1"
+    assert result.root_id == "r1"
+    assert result.hpath == "/notes"
+    # Only the projected fields are kept — internal kernel keys are dropped.
+    assert "internalField" not in result.model_dump()
 
 
 @pytest.mark.asyncio
@@ -178,7 +179,8 @@ async def test_get_block_not_found(mock_sy):
 
     mock_sy.call.return_value = None
     result = await get_block(id="nonexistent")
-    assert "error" in result
+    assert result.error is not None
+    assert "not found" in result.error
 
 
 @pytest.mark.asyncio
