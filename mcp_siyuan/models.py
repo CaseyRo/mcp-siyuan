@@ -248,13 +248,22 @@ class WriteResult(BaseModel):
     shape returned by ``_wrap_result`` as well as kernel-passthrough dicts (e.g.
     ``create_notebook`` returns ``{"notebook": {...}}``). ``extra="allow"`` keeps
     every passthrough key; the named fields document the common ones.
+
+    CDI-1093: the envelope carries an optional ``warnings`` list so write tools
+    can surface non-fatal advisories (e.g. a best-effort sub-step failed) without
+    failing the whole call. Added as an empty-by-default list so existing callers
+    that ignore it are unaffected.
     """
 
     model_config = _ALLOW
 
     ok: bool = True
     transactions: list[Any] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     error: str | None = None
+    # Surfaced on write failures so callers know an identical retry is safe
+    # (the HTTP client sets SiYuanError.retryable for 5xx/transport faults).
+    retryable: bool | None = None
 
 
 class DeleteBlockResult(BaseModel):
@@ -265,6 +274,7 @@ class DeleteBlockResult(BaseModel):
     ok: bool = True
     already_absent: bool = False
     transactions: list[Any] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -277,6 +287,7 @@ class DeleteDocResult(BaseModel):
     deleted_id: str = ""
     already_absent: bool = False
     result: Any = None
+    warnings: list[str] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -294,6 +305,7 @@ class SectionResult(BaseModel):
     action: Literal["replaced", "created"] | None = None
     heading_id: str | None = None
     anchor_id: str | None = None
+    warnings: list[str] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -306,6 +318,62 @@ class DocUpsertResult(BaseModel):
     was_created: bool = False
     was_updated: bool = False
     hpath: str = ""
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
+class ListedDoc(BaseModel):
+    """One row of ``list_documents`` (CDI-1093).
+
+    Unlike a raw ``sql_query`` row — where the ``name`` column on the blocks
+    table is almost always empty for documents — this projects the doc *title*
+    into both ``title`` and ``name`` so callers get a populated, human-readable
+    label without a follow-up lookup. (SiYuan stores a document's title in the
+    ``content`` column; ``name`` is a separate, usually-blank alias field.)
+    """
+
+    model_config = _ALLOW
+
+    id: str = ""
+    title: str = ""
+    name: str = ""
+    box: str = ""
+    hpath: str = ""
+    updated: str = ""
+    error: str | None = None
+
+
+class HealthDoc(BaseModel):
+    """One flagged document from ``list_conflicts`` / ``list_orphans`` (CDI-1093).
+
+    ``reason`` records why the doc was flagged: ``"sync_conflict"`` (hpath/path
+    carries a SiYuan sync-conflict suffix), ``"malformed_hpath"`` (hpath empty
+    or not a leading-slash path), or ``"orphan"`` (parent document missing).
+    """
+
+    model_config = _ALLOW
+
+    id: str = ""
+    title: str = ""
+    box: str = ""
+    hpath: str = ""
+    path: str = ""
+    reason: str = ""
+    error: str | None = None
+
+
+class DocSummary(BaseModel):
+    """Return shape of ``get_doc_summary`` (CDI-1093)."""
+
+    model_config = _ALLOW
+
+    id: str = ""
+    title: str = ""
+    hpath: str = ""
+    box: str = ""
+    child_count: int = 0
+    content_preview: str = ""
+    first_blocks: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
 
 

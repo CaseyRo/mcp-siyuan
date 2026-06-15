@@ -16,6 +16,9 @@ from mcp_siyuan.models import (
     CaptureTaskResult,
     ContextSearchHit,
     DocExistsResult,
+    DocSummary,
+    HealthDoc,
+    ListedDoc,
     OutlineHeading,
     RecentDoc,
     TaggedBlock,
@@ -56,6 +59,46 @@ async def get_recent_docs(
     data = await sy.call("/api/query/sql", stmt=stmt)
     rows = data if isinstance(data, list) else []
     return [RecentDoc(**row) for row in rows]
+
+
+async def list_documents(
+    title_contains: str = "",
+    notebook: str = "",
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+) -> list[ListedDoc]:
+    """[notes] List documents, optionally filtered by a substring of the title.
+
+    A typed alternative to a raw ``sql_query`` for the common "find documents
+    by title" need. Crucially, the ``name`` column on the blocks table is almost
+    always empty for documents — a document's human-readable title lives in the
+    ``content`` column — so a hand-written SQL SELECT of ``name`` returns blanks
+    (CDI-1093). This helper projects the title into BOTH ``title`` and ``name``
+    so callers always get a populated label without a follow-up lookup.
+
+    Args:
+        title_contains: Case-sensitive substring to match against the document
+            title. Empty = list all documents (newest first).
+        notebook: Optional notebook ID to scope the listing. Empty = all notebooks.
+        limit: Max documents to return (default 50, max 200).
+    """
+    where = "WHERE type = 'd'"
+    if notebook:
+        where += f" AND box = '{_sanitize(notebook)}'"
+    if title_contains:
+        where += f" AND content LIKE '%{_sanitize(title_contains)}%'"
+    stmt = (
+        f"SELECT id, content AS title, box, hpath, updated "
+        f"FROM blocks {where} ORDER BY updated DESC LIMIT {limit}"
+    )
+    data = await sy.call("/api/query/sql", stmt=stmt)
+    rows = data if isinstance(data, list) else []
+    docs: list[ListedDoc] = []
+    for row in rows:
+        title = row.get("title", "") or ""
+        # Populate `name` with the title so it's never blank (the raw `name`
+        # column would be), while keeping every other projected key intact.
+        docs.append(ListedDoc(name=title, **row))
+    return docs
 
 
 async def find_tasks(
@@ -415,3 +458,182 @@ async def get_document_outline(
     data = await sy.call("/api/query/sql", stmt=stmt)
     rows = data if isinstance(data, list) else []
     return [OutlineHeading(**row) for row in rows]
+
+
+# Substrings SiYuan appends to a doc's path/hpath when a sync produces a
+# conflicting copy. Matching is case-insensitive and substring-based.
+_CONFLICT_MARKERS = ("conflict", "冲突")
+
+
+def _is_conflict(*values: str) -> bool:
+    blob = " ".join(v.lower() for v in values if v)
+    return any(marker in blob for marker in _CONFLICT_MARKERS)
+
+
+async def list_conflicts(
+    notebook: str = "",
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+) -> list[HealthDoc]:
+    """[notes] List documents that carry a sync-conflict suffix or a malformed hpath.
+
+    A workspace-hygiene helper (CDI-1093). Flags documents whose ``path``/``hpath``
+    contains a sync-conflict marker (SiYuan writes these when two devices edit the
+    same doc), or whose ``hpath`` is empty / not a leading-slash path (malformed).
+
+    Args:
+        notebook: Optional notebook ID to scope the scan. Empty = all notebooks.
+        limit: Max documents to scan/return (default 50, max 200).
+    """
+    where = "WHERE type = 'd'"
+    if notebook:
+        where += f" AND box = '{_sanitize(notebook)}'"
+    stmt = (
+        f"SELECT id, content AS title, box, hpath, path "
+        f"FROM blocks {where} ORDER BY updated DESC LIMIT {limit}"
+    )
+    data = await sy.call("/api/query/sql", stmt=stmt)
+    rows = data if isinstance(data, list) else []
+    flagged: list[HealthDoc] = []
+    for row in rows:
+        hpath = row.get("hpath") or ""
+        path = row.get("path") or ""
+        if _is_conflict(hpath, path):
+            reason = "sync_conflict"
+        elif not hpath or not hpath.startswith("/"):
+            reason = "malformed_hpath"
+        else:
+            continue
+        flagged.append(
+            HealthDoc(
+                id=row.get("id", ""),
+                title=row.get("title", ""),
+                box=row.get("box", ""),
+                hpath=hpath,
+                path=path,
+                reason=reason,
+            )
+        )
+    return flagged
+
+
+async def list_orphans(
+    notebook: str = "",
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+) -> list[HealthDoc]:
+    """[notes] List documents whose parent document no longer exists (orphans).
+
+    A workspace-hygiene helper (CDI-1093). A document is an orphan when its
+    ``hpath`` implies a parent folder/document but no document exists at that
+    parent path — typically the residue of a partial move or delete.
+
+    Top-level documents (hpath with a single path segment, e.g. ``/Foo``) are
+    never orphans; only nested docs (``/Foo/Bar``) are checked against their
+    parent ``/Foo``.
+
+    Args:
+        notebook: Optional notebook ID to scope the scan. Empty = all notebooks.
+        limit: Max documents to scan/return (default 50, max 200).
+    """
+    where = "WHERE type = 'd'"
+    if notebook:
+        where += f" AND box = '{_sanitize(notebook)}'"
+    stmt = (
+        f"SELECT id, content AS title, box, hpath, path "
+        f"FROM blocks {where} ORDER BY updated DESC LIMIT {limit}"
+    )
+    data = await sy.call("/api/query/sql", stmt=stmt)
+    rows = data if isinstance(data, list) else []
+
+    # Set of existing doc hpaths (within scope) for O(1) parent lookup.
+    existing = {r.get("hpath") for r in rows if r.get("hpath")}
+    orphans: list[HealthDoc] = []
+    for row in rows:
+        hpath = row.get("hpath") or ""
+        if not hpath.startswith("/"):
+            continue  # malformed — handled by list_conflicts, not here
+        parent = hpath.rsplit("/", 1)[0]
+        if parent in ("", "/"):
+            continue  # top-level doc, no parent expected
+        if parent not in existing:
+            orphans.append(
+                HealthDoc(
+                    id=row.get("id", ""),
+                    title=row.get("title", ""),
+                    box=row.get("box", ""),
+                    hpath=hpath,
+                    path=row.get("path") or "",
+                    reason="orphan",
+                )
+            )
+    return orphans
+
+
+async def get_doc_summary(
+    id: str,
+    first_n_blocks: Annotated[int, Field(ge=1, le=50)] = 5,
+    preview_chars: Annotated[int, Field(ge=0, le=4000)] = 500,
+) -> DocSummary:
+    """[notes] One-call overview of a document: title, location, size, and a preview.
+
+    Returns the document's title and ``hpath``, its direct child-block count, a
+    short content preview, and the first N top-level blocks (CDI-1093) — enough
+    to orient on a document without fetching its full markdown.
+
+    Args:
+        id: The document block ID.
+        first_n_blocks: How many top-level child blocks to include (default 5, max 50).
+        preview_chars: Max characters of content preview (default 500, max 4000).
+    """
+    safe_id = _sanitize(id)
+
+    # Document header (title, hpath, box).
+    doc_rows = await sy.call(
+        "/api/query/sql",
+        stmt=(
+            f"SELECT id, content AS title, hpath, box FROM blocks "
+            f"WHERE id = '{safe_id}' AND type = 'd' LIMIT 1"
+        ),
+    )
+    doc = doc_rows[0] if isinstance(doc_rows, list) and doc_rows else None
+    if not doc:
+        return DocSummary(id=id, error=f"Document {id} not found")
+
+    # Direct child count.
+    count_rows = await sy.call(
+        "/api/query/sql",
+        stmt=(
+            f"SELECT COUNT(*) AS n FROM blocks WHERE parent_id = '{safe_id}'"
+        ),
+    )
+    child_count = 0
+    if isinstance(count_rows, list) and count_rows:
+        try:
+            child_count = int(count_rows[0].get("n", 0) or 0)
+        except (TypeError, ValueError):
+            child_count = 0
+
+    # First N top-level blocks.
+    block_rows = await sy.call(
+        "/api/query/sql",
+        stmt=(
+            f"SELECT id, type, content, sort FROM blocks "
+            f"WHERE parent_id = '{safe_id}' ORDER BY sort ASC LIMIT {first_n_blocks}"
+        ),
+    )
+    first_blocks = block_rows if isinstance(block_rows, list) else []
+
+    preview = ""
+    if preview_chars:
+        preview = "\n".join(
+            b.get("content", "") for b in first_blocks if b.get("content")
+        )[:preview_chars]
+
+    return DocSummary(
+        id=doc.get("id", id),
+        title=doc.get("title", ""),
+        hpath=doc.get("hpath", ""),
+        box=doc.get("box", ""),
+        child_count=child_count,
+        content_preview=preview,
+        first_blocks=first_blocks,
+    )

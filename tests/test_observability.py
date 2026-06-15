@@ -102,6 +102,38 @@ async def test_traced_tool_records_error_outcome(reset_context):
 
 
 @pytest.mark.asyncio
+async def test_traced_tool_marks_retryable_errors(reset_context):
+    """A retryable SiYuanError surfaces a [retryable] marker in the message (CDI-1093)."""
+    from mcp_siyuan.client import SiYuanError
+
+    @traced_tool
+    async def transient() -> None:
+        raise SiYuanError("upstream 502", retryable=True)
+
+    with pytest.raises(SiYuanError) as exc_info:
+        await transient()
+    msg = str(exc_info.value)
+    assert "[retryable]" in msg
+    assert "request_id=" in msg
+
+
+@pytest.mark.asyncio
+async def test_traced_tool_non_retryable_errors_have_no_marker(reset_context):
+    """A non-retryable error must NOT carry the [retryable] marker (CDI-1093)."""
+    from mcp_siyuan.client import SiYuanError
+
+    @traced_tool
+    async def hard_fail() -> None:
+        raise SiYuanError("bad request", code=42)
+
+    with pytest.raises(SiYuanError) as exc_info:
+        await hard_fail()
+    msg = str(exc_info.value)
+    assert "[retryable]" not in msg
+    assert "request_id=" in msg
+
+
+@pytest.mark.asyncio
 async def test_traced_tool_records_validation_error(reset_context):
     """Pydantic ValidationError → outcome=validation_error, kernel_status=null."""
     from pydantic import BaseModel, ValidationError

@@ -110,6 +110,32 @@ async def test_same_key_different_tools_no_collision(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_rename_doc_replays_with_key(mock_sy):
+    """rename_doc honours idempotency_key so retries don't re-apply (CDI-1093)."""
+    from mcp_siyuan.tools.write import rename_doc
+
+    mock_sy.call.return_value = {"ok": True}
+    first = await rename_doc(id="d1", title="New Title", idempotency_key="RN1")
+    second = await rename_doc(id="d1", title="New Title", idempotency_key="RN1")
+    assert first.ok is True
+    assert second.ok is True
+    assert mock_sy.call.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_move_doc_replays_with_key(mock_sy):
+    """move_doc honours idempotency_key so retries don't re-apply (CDI-1093)."""
+    from mcp_siyuan.tools.write import move_doc
+
+    mock_sy.call.return_value = {"ok": True}
+    first = await move_doc(from_ids=["d1"], to_id="nb2", idempotency_key="MV1")
+    second = await move_doc(from_ids=["d1"], to_id="nb2", idempotency_key="MV1")
+    assert first.ok is True
+    assert second.ok is True
+    assert mock_sy.call.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_omitted_key_preserves_legacy_behavior(mock_sy):
     """No key → no cache lookup, no cache store, kernel called every time."""
     from mcp_siyuan.tools.write import create_document
