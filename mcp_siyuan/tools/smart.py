@@ -150,18 +150,36 @@ async def get_tags() -> list[TagCount]:
     return _flatten(tags)
 
 
+# Span types SiYuan uses for an inline tag. Legacy content uses the bare
+# 'tag'; spans written through the kernel API (our own create_document /
+# update_block, and recent SiYuan builds) carry the compound textmark form,
+# e.g. 'textmark tag' or 'textmark em tag' when the tag also has emphasis.
+# CDI-1228: matching only the legacy 'tag' made search_by_tag blind to every
+# tag this MCP creates. We enumerate the known variants explicitly rather than
+# a blind LIKE '%tag%' so we never catch an unrelated future span type whose
+# name merely contains "tag".
+_TAG_SPAN_TYPES = ("tag", "textmark tag", "textmark em tag")
+
+
 async def search_by_tag(tag: str) -> list[TaggedBlock]:
     """[notes] Find all blocks with a specific tag.
+
+    Matches inline tags regardless of how they were authored — both the legacy
+    ``type='tag'`` spans and the compound ``'textmark tag'`` / ``'textmark em
+    tag'`` spans the kernel API writes (CDI-1228). The tag name is matched
+    exactly on the span ``content`` (no substring leakage), so searching
+    'decision' will not also return 'decisions'.
 
     Args:
         tag: The tag to search for (without #). e.g. 'porsche', 'wishlist'.
     """
     safe_tag = _sanitize(tag)
+    type_list = ", ".join(f"'{t}'" for t in _TAG_SPAN_TYPES)
     stmt = (
         f"SELECT blocks.id, blocks.content, blocks.type, blocks.box, "
         f"blocks.hpath, blocks.updated "
         f"FROM spans INNER JOIN blocks ON spans.block_id = blocks.id "
-        f"WHERE spans.type = 'tag' AND spans.content LIKE '%{safe_tag}%' "
+        f"WHERE spans.type IN ({type_list}) AND spans.content = '{safe_tag}' "
         f"ORDER BY blocks.updated DESC LIMIT 50"
     )
     data = await sy.call("/api/query/sql", stmt=stmt)

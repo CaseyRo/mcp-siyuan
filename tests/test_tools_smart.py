@@ -155,6 +155,33 @@ async def test_search_by_tag(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_search_by_tag_matches_textmark_variants(mock_sy):
+    """search_by_tag covers API-created textmark tag spans, not just legacy 'tag' (CDI-1228)."""
+    from mcp_siyuan.tools.smart import search_by_tag
+
+    mock_sy.call.return_value = []
+    await search_by_tag(tag="decision")
+    stmt = mock_sy.call.call_args.kwargs["stmt"]
+    # Predicate must cover all known tag span types, not only the legacy bare 'tag'.
+    assert "spans.type IN ('tag', 'textmark tag', 'textmark em tag')" in stmt
+    # No blind LIKE '%tag%' on the span type.
+    assert "spans.type = 'tag'" not in stmt
+
+
+@pytest.mark.asyncio
+async def test_search_by_tag_exact_name_match(mock_sy):
+    """search_by_tag anchors the tag name exactly on span content — no substring leak (CDI-1228)."""
+    from mcp_siyuan.tools.smart import search_by_tag
+
+    mock_sy.call.return_value = []
+    await search_by_tag(tag="decision")
+    stmt = mock_sy.call.call_args.kwargs["stmt"]
+    # Exact equality on content, not a substring LIKE that would also match 'decisions'.
+    assert "spans.content = 'decision'" in stmt
+    assert "LIKE" not in stmt.upper()
+
+
+@pytest.mark.asyncio
 async def test_search_by_tag_rejects_injection(mock_sy):
     """search_by_tag rejects SQL injection attempts."""
     from mcp_siyuan.tools.smart import search_by_tag
