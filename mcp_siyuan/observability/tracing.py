@@ -77,9 +77,17 @@ def traced_tool(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[
             exc = raised
             # Append request_id to the exception message so MCP clients see it
             # in the surfaced error payload. Original args preserved.
+            # CDI-1093: when the underlying SiYuanError is flagged retryable
+            # (transient 5xx / transport fault), also surface a `[retryable]`
+            # marker so callers — including write tools, where we cannot return
+            # a {retryable: true} envelope without breaking the raise-based
+            # contract — know an identical retry is safe.
+            retryable = bool(getattr(raised, "retryable", False))
             existing = list(getattr(raised, "args", ()))
             tail = f"[request_id={request_id}]"
-            if existing and isinstance(existing[0], str) and tail not in existing[0]:
+            if retryable:
+                tail = f"[retryable] {tail}"
+            if existing and isinstance(existing[0], str) and "[request_id=" not in existing[0]:
                 existing[0] = f"{existing[0]} {tail}"
                 raised.args = tuple(existing)
             elif not existing:
