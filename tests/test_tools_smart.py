@@ -38,6 +38,45 @@ async def test_get_recent_docs_filtered_by_notebook(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_list_documents_populates_name(mock_sy):
+    """list_documents projects the title into both title and name (CDI-1093)."""
+    from mcp_siyuan.tools.smart import list_documents
+
+    mock_sy.call.return_value = [
+        {"id": "d1", "title": "Quarterly Review", "box": "nb1", "hpath": "/q", "updated": "20260601"},
+    ]
+    result = await list_documents()
+    assert len(result) == 1
+    assert result[0].title == "Quarterly Review"
+    # name is never blank — it mirrors the title (raw SQL name column would be empty).
+    assert result[0].name == "Quarterly Review"
+    stmt = mock_sy.call.call_args.kwargs["stmt"]
+    assert "type = 'd'" in stmt
+
+
+@pytest.mark.asyncio
+async def test_list_documents_filters_by_title_and_notebook(mock_sy):
+    """list_documents builds a title LIKE + notebook filter."""
+    from mcp_siyuan.tools.smart import list_documents
+
+    mock_sy.call.return_value = []
+    await list_documents(title_contains="Review", notebook="nb1")
+    stmt = mock_sy.call.call_args.kwargs["stmt"]
+    assert "content LIKE '%Review%'" in stmt
+    assert "box = 'nb1'" in stmt
+
+
+@pytest.mark.asyncio
+async def test_list_documents_rejects_injection(mock_sy):
+    """list_documents sanitizes the title filter (CDI-1093)."""
+    from mcp_siyuan.tools.smart import list_documents
+
+    with pytest.raises(ValueError, match="Unsafe characters"):
+        await list_documents(title_contains="'; DROP TABLE blocks; --")
+    mock_sy.call.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_find_tasks_open(mock_sy):
     """find_tasks returns open tasks with doc_title."""
     from mcp_siyuan.tools.smart import find_tasks
@@ -343,6 +382,78 @@ async def test_doc_exists_normalises_path(mock_sy):
     mock_sy.call.return_value = []
     result = await doc_exists(notebook="nb1", path="Projects/Foo")
     assert result.hpath == "/Projects/Foo"
+
+
+@pytest.mark.asyncio
+async def test_list_conflicts_flags_sync_and_malformed(mock_sy):
+    """list_conflicts flags sync-conflict suffixes and malformed hpaths (CDI-1093)."""
+    from mcp_siyuan.tools.smart import list_conflicts
+
+    mock_sy.call.return_value = [
+        {"id": "d1", "title": "Notes (conflict 2026-06)", "box": "nb1", "hpath": "/Notes (conflict 2026-06)", "path": "/x.sy"},
+        {"id": "d2", "title": "Bad", "box": "nb1", "hpath": "", "path": ""},
+        {"id": "d3", "title": "Fine", "box": "nb1", "hpath": "/Fine", "path": "/fine.sy"},
+    ]
+    result = await list_conflicts()
+    by_id = {d.id: d.reason for d in result}
+    assert by_id.get("d1") == "sync_conflict"
+    assert by_id.get("d2") == "malformed_hpath"
+    assert "d3" not in by_id  # clean doc not flagged
+
+
+@pytest.mark.asyncio
+async def test_list_orphans_detects_missing_parent(mock_sy):
+    """list_orphans flags nested docs whose parent path is absent (CDI-1093)."""
+    from mcp_siyuan.tools.smart import list_orphans
+
+    mock_sy.call.return_value = [
+        {"id": "p", "title": "Projects", "box": "nb1", "hpath": "/Projects", "path": "/p.sy"},
+        {"id": "child_ok", "title": "Has Parent", "box": "nb1", "hpath": "/Projects/Foo", "path": "/p/f.sy"},
+        {"id": "orphan", "title": "Lost", "box": "nb1", "hpath": "/Gone/Bar", "path": "/g/b.sy"},
+        {"id": "toplevel", "title": "Root", "box": "nb1", "hpath": "/Root", "path": "/r.sy"},
+    ]
+    result = await list_orphans()
+    ids = {d.id for d in result}
+    assert ids == {"orphan"}  # only the doc whose parent '/Gone' is missing
+    assert result[0].reason == "orphan"
+
+
+@pytest.mark.asyncio
+async def test_get_doc_summary(mock_sy):
+    """get_doc_summary returns title, child_count, preview, first blocks (CDI-1093)."""
+    from mcp_siyuan.tools.smart import get_doc_summary
+
+    async def mock_call(endpoint, **kwargs):
+        stmt = kwargs.get("stmt", "")
+        if "type = 'd'" in stmt:
+            return [{"id": "doc1", "title": "My Doc", "hpath": "/My Doc", "box": "nb1"}]
+        if "COUNT(*)" in stmt:
+            return [{"n": 3}]
+        # first-N blocks query
+        return [
+            {"id": "b1", "type": "h", "content": "Intro", "sort": 0},
+            {"id": "b2", "type": "p", "content": "Body text", "sort": 1},
+        ]
+
+    mock_sy.call.side_effect = mock_call
+    result = await get_doc_summary(id="doc1")
+    assert result.title == "My Doc"
+    assert result.hpath == "/My Doc"
+    assert result.child_count == 3
+    assert len(result.first_blocks) == 2
+    assert "Intro" in result.content_preview
+    assert result.error is None
+
+
+@pytest.mark.asyncio
+async def test_get_doc_summary_not_found(mock_sy):
+    """get_doc_summary returns an error payload when the doc is missing (CDI-1093)."""
+    from mcp_siyuan.tools.smart import get_doc_summary
+
+    mock_sy.call.return_value = []
+    result = await get_doc_summary(id="nope")
+    assert result.error is not None
+    assert result.child_count == 0
 
 
 @pytest.mark.asyncio

@@ -56,8 +56,8 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_delete_block` | Delete a block by ID. |
 | `siyuan_delete_doc` | Delete a document by its block ID (wraps `/api/filetree/removeDocByID`). Verifies the doc is actually gone via SQL — unlike `delete_block`, which silently no-ops on type='d' blocks. Accepts `idempotency_key`. |
 | `siyuan_set_block_attrs` | Set attributes on a block. Accepts `idempotency_key`. |
-| `siyuan_move_doc` | Move one or more documents to a new parent document or notebook. |
-| `siyuan_rename_doc` | Rename a document without moving it. |
+| `siyuan_move_doc` | Move one or more documents to a new parent document or notebook. Optional `new_title` renames a single moved doc in the same call. Accepts `idempotency_key`. |
+| `siyuan_rename_doc` | Rename a document without moving it. Accepts `idempotency_key`. |
 | `siyuan_move_block` | Move a block to a new position. |
 | `siyuan_daily_note` | Create or open today's daily note in a notebook. |
 | `siyuan_bulk_create_documents` | Create up to 50 documents in one call. Per-item failures don't abort the batch; results include `status` and `error` so callers can retry only the failures. |
@@ -68,6 +68,7 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | Tool | Description |
 |------|-------------|
 | `siyuan_get_recent_docs` | Get recently modified documents, newest first. |
+| `siyuan_list_documents` | List documents, optionally filtered by a title substring. Populates `title`/`name` (the raw SQL `name` column is blank for docs). |
 | `siyuan_find_tasks` | Find task/TODO items across SiYuan notes. |
 | `siyuan_get_backlinks` | Get all blocks that reference (link to) a given block or document. |
 | `siyuan_get_tags` | List all tags used across the workspace with their usage count. |
@@ -77,6 +78,9 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_capture_task` | Append a new task checkbox to today's daily note. |
 | `siyuan_get_document_outline` | Get the heading outline of a document. |
 | `siyuan_doc_exists` | Check if a document exists at `notebook` + `hpath`. Returns `{exists, block_id}` — no error on miss. |
+| `siyuan_get_doc_summary` | One-call overview of a document: title, hpath, child count, content preview, first N blocks. |
+| `siyuan_list_conflicts` | List documents with sync-conflict suffixes or malformed hpaths (workspace hygiene). |
+| `siyuan_list_orphans` | List documents whose parent document no longer exists (orphans). |
 
 ### Export
 
@@ -103,6 +107,8 @@ The hand-written catalog is kept honest by `tests/test_readme_tool_catalog.py`, 
 ### Tool annotations & structured output
 
 Every tool is registered with [tool annotations](https://gofastmcp.com/) (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`, and a human-friendly `title`) plus tags (`read` / `write` / `smart` / `destructive` / `export`) so clients can auto-approve safe reads and gate only true destructive ops. Tools that returned structured dicts now return typed Pydantic models (`DocUpsertResult`, `DocExistsResult`, `BulkDocResult`, `BulkAttrResult`), so FastMCP advertises an `output_schema` and emits structured content. The wire-level JSON keys are unchanged from the previous prose `Returns:` contracts.
+
+**Write-tool response envelope (CDI-1093):** the write-result models (`WriteResult`, `DeleteBlockResult`, `DeleteDocResult`, `SectionResult`, `DocUpsertResult`) carry an optional `warnings: []` list for non-fatal advisories alongside the existing `ok` / `transactions` keys — additive, so callers that ignore it are unaffected. On a *failure*, transient errors (HTTP 502/503/504, transport faults) surface a `[retryable]` marker in the error message so callers know an identical retry is safe; the underlying `SiYuanError.retryable` flag drives this. (`create_document` still returns a bare document-ID string for backwards compatibility — wrapping it in an envelope would break existing callers.)
 
 ### Resources
 
