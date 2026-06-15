@@ -37,9 +37,13 @@ from mcp_siyuan.tools.smart import (
     find_tasks,
     get_backlinks,
     get_block_children,
+    get_doc_summary,
     get_document_outline,
     get_recent_docs,
     get_tags,
+    list_conflicts,
+    list_documents,
+    list_orphans,
     search_by_tag,
     search_with_context,
 )
@@ -200,6 +204,7 @@ _register(bulk_set_attrs, title="Bulk set block attributes", tags={"write"}, ide
 
 # Smart — LLM-ergonomic high-level tools (reads)
 _register(get_recent_docs, title="Recently modified documents", tags={"read", "smart"}, read_only=True, idempotent=True)
+_register(list_documents, title="List documents by title", tags={"read", "smart"}, read_only=True, idempotent=True)
 _register(find_tasks, title="Find tasks / TODOs", tags={"read", "smart"}, read_only=True, idempotent=True)
 _register(get_backlinks, title="Get backlinks", tags={"read", "smart"}, read_only=True, idempotent=True)
 _register(get_tags, title="List tags", tags={"read", "smart"}, read_only=True, idempotent=True)
@@ -209,6 +214,9 @@ _register(search_with_context, title="Search with context", tags={"read", "smart
 _register(capture_task, title="Capture task to daily note", tags={"write", "smart"})
 _register(get_document_outline, title="Get document outline", tags={"read", "smart"}, read_only=True, idempotent=True)
 _register(doc_exists, title="Document exists?", tags={"read", "smart"}, read_only=True, idempotent=True)
+_register(get_doc_summary, title="Get document summary", tags={"read", "smart"}, read_only=True, idempotent=True)
+_register(list_conflicts, title="List sync-conflict / malformed docs", tags={"read", "smart"}, read_only=True, idempotent=True)
+_register(list_orphans, title="List orphaned documents", tags={"read", "smart"}, read_only=True, idempotent=True)
 
 # Export
 _register(export_pdf, title="Export document as PDF", tags={"read", "export"}, read_only=True, idempotent=True)

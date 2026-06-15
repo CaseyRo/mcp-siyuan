@@ -280,6 +280,48 @@ async def test_move_doc_multiple(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_move_doc_with_new_title_renames(mock_sy):
+    """move_doc with new_title issues a follow-up rename (CDI-1093)."""
+    from mcp_siyuan.tools.write import move_doc
+
+    mock_sy.call.return_value = None
+    result = await move_doc(from_ids=["doc1"], to_id="nb2", new_title="Renamed")
+    assert result.ok is True
+    assert result.warnings == []
+    endpoints = [c.args[0] for c in mock_sy.call.call_args_list]
+    assert "/api/filetree/moveDocsByID" in endpoints
+    assert "/api/filetree/renameDocByID" in endpoints
+
+
+@pytest.mark.asyncio
+async def test_move_doc_new_title_rejects_multiple(mock_sy):
+    """new_title with multiple from_ids is rejected before any kernel call (CDI-1093)."""
+    from mcp_siyuan.tools.write import move_doc
+
+    with pytest.raises(ValueError, match="exactly one document"):
+        await move_doc(from_ids=["d1", "d2"], to_id="nb2", new_title="X")
+    mock_sy.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_move_doc_rename_failure_warns_not_raises(mock_sy):
+    """A failed post-move rename surfaces as a warning; the move still succeeds (CDI-1093)."""
+    from mcp_siyuan.client import SiYuanError
+    from mcp_siyuan.tools.write import move_doc
+
+    async def mock_call(endpoint, **kwargs):
+        if endpoint == "/api/filetree/renameDocByID":
+            raise SiYuanError("rename failed", code=1)
+        return None
+
+    mock_sy.call.side_effect = mock_call
+    result = await move_doc(from_ids=["doc1"], to_id="nb2", new_title="Renamed")
+    assert result.ok is True
+    assert len(result.warnings) == 1
+    assert "rename" in result.warnings[0].lower()
+
+
+@pytest.mark.asyncio
 async def test_rename_doc(mock_sy):
     """rename_doc sends id and title to renameDocByID."""
     from mcp_siyuan.tools.write import rename_doc

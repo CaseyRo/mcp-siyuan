@@ -403,34 +403,97 @@ async def set_block_attrs(
     )
 
 
-async def move_doc(from_ids: list[str], to_id: str) -> WriteResult:
+async def move_doc(
+    from_ids: list[str],
+    to_id: str,
+    new_title: str = "",
+    idempotency_key: str | None = None,
+) -> WriteResult:
     """[notes] Move one or more documents to a new parent document or notebook.
+
+    Optionally rename a single moved document in the same call via ``new_title``
+    (CDI-1093) — a move-then-rename combinator that saves a round-trip. Renaming
+    is only supported when exactly one document is moved; supplying ``new_title``
+    with multiple ``from_ids`` raises ``ValueError`` (which doc would the title
+    apply to?).
 
     Args:
         from_ids: List of document IDs to move.
         to_id: Target parent document ID or notebook ID.
+        new_title: Optional new title to apply to the moved document. Only valid
+            when ``from_ids`` has exactly one entry.
+        idempotency_key: Optional replay-cache key (see create_document). A
+            move replayed with the same key within SIYUAN_IDEMPOTENCY_TTL_SECONDS
+            returns the prior result instead of re-issuing the move (CDI-1093).
+
+    Returns:
+        A ``WriteResult`` envelope; ``warnings`` notes a best-effort rename that
+        could not be applied (the move itself still succeeded).
     """
-    result = await sy.call(
-        "/api/filetree/moveDocsByID",
-        fromIDs=from_ids,
-        toID=to_id,
+    if new_title and len(from_ids) != 1:
+        raise ValueError(
+            "new_title is only supported when moving exactly one document "
+            f"(got {len(from_ids)} from_ids)."
+        )
+
+    async def _call() -> WriteResult:
+        result = await sy.call(
+            "/api/filetree/moveDocsByID",
+            fromIDs=from_ids,
+            toID=to_id,
+        )
+        wrapped = _wrap_result(result)
+        if new_title:
+            # Best-effort rename after the move. A rename failure must not undo
+            # or mask the successful move — surface it as a warning instead.
+            try:
+                await sy.call(
+                    "/api/filetree/renameDocByID",
+                    id=from_ids[0],
+                    title=new_title,
+                )
+            except Exception as exc:  # SiYuanError, transport, ...
+                logger.warning(
+                    "move_doc: post-move rename of %s failed: %s",
+                    from_ids[0],
+                    exc,
+                )
+                wrapped.warnings.append(
+                    f"moved ok but rename to {new_title!r} failed: {exc}"
+                )
+        return wrapped
+
+    return await idempotency_cache.with_idempotency(
+        "move_doc", idempotency_key, _call
     )
-    return _wrap_result(result)
 
 
-async def rename_doc(id: str, title: str) -> WriteResult:
+async def rename_doc(
+    id: str,
+    title: str,
+    idempotency_key: str | None = None,
+) -> WriteResult:
     """[notes] Rename a document without moving it.
 
     Args:
         id: The document ID to rename.
         title: New title for the document.
+        idempotency_key: Optional replay-cache key (see create_document). A
+            rename replayed with the same key within SIYUAN_IDEMPOTENCY_TTL_SECONDS
+            returns the prior result instead of re-issuing the rename (CDI-1093).
     """
-    result = await sy.call(
-        "/api/filetree/renameDocByID",
-        id=id,
-        title=title,
+
+    async def _call() -> WriteResult:
+        result = await sy.call(
+            "/api/filetree/renameDocByID",
+            id=id,
+            title=title,
+        )
+        return _wrap_result(result)
+
+    return await idempotency_cache.with_idempotency(
+        "rename_doc", idempotency_key, _call
     )
-    return _wrap_result(result)
 
 
 async def move_block(
