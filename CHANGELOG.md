@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.24] - 2026-06-30
+
+- chore(deps): security upgrades (pip-audit)
+
+
 ## [0.2.23] - 2026-06-30
 
 - chore(security): untrack .claude/agent-memory + gitignore
