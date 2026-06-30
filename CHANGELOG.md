@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.23] - 2026-06-30
+
+- chore(security): untrack .claude/agent-memory + gitignore
+
+
 ## [0.2.22] - 2026-06-30
 
 - chore: add MIT LICENSE, public-ready hygiene (.env.example, .gitignore, README license, openspec wiring)
