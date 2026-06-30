@@ -12,3 +12,6 @@ package-lock.json
 yarn.lock
 .pytest_cache/
 .ruff_cache/
+# Internal agent memory & worktrees (infra notes, not for distribution)
+.claude/agent-memory/
+.claude/worktrees/
