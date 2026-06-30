@@ -328,3 +328,11 @@ The release commit pattern (see commit `8f82d78`): bump both in a single `chore:
 ## Related work
 
 Cross-references to upstream investigations (No-approval-received RCA, portal caching, server consolidation, portal auth) live in the team's internal tracker, not in this public README.
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Casey Romkes.
+
+SiYuan Notes is an independent open-source project; this server is an unofficial third-party integration and is not affiliated with or endorsed by the SiYuan project.
