@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.22] - 2026-06-30
+
+- chore: add MIT LICENSE, public-ready hygiene (.env.example, .gitignore, README license, openspec wiring)
+
+
 ## [0.2.20] - 2026-06-10
 
 - feat(siyuan): tags + defensive elicit on deletes + doc-outline resource template (shelf) (#27)
