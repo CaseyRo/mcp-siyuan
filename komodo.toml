@@ -1,17 +1,19 @@
+# Live host is nebula-1 (ubuntu-smurf-mirror decommissioned 2026-06-10). See ARCHITECTURE.md.
 [[server]]
-name = "ubuntu-smurf-mirror"
+name = "nebula-1"
 [server.config]
-address = "http://100.118.241.89:8120"
+address = "http://100.89.96.56:8120"
 enabled = true
 
+# Live Komodo stack is named `git-mcp-siyuan-nebula` — this stanza name matches it.
 [[stack]]
-name = "git-mcp-siyuan"
+name = "git-mcp-siyuan-nebula"
 description = "MCP server for SiYuan Notes (FastMCP 3.x)"
 deploy = true
 tags = ["mcp"]
 
 [stack.config]
-server_id = "ubuntu-smurf-mirror"
+server_id = "nebula-1"
 git_provider = "github.com"
 repo = "CaseyRo/mcp-siyuan"
 branch = "main"
