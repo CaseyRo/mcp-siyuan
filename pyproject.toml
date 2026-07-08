@@ -9,7 +9,7 @@ authors = [{ name = "Casey Romkes" }]
 dependencies = [
     # Bumped from the 3.2.4 RCA pin to pick up annotation / structured-output /
     # resource ergonomics. Constrained below 4.0 to avoid the next major.
-    "fastmcp>=3.4.2,<4.0.0",
+    "fastmcp>=3.4.3,<4.0.0",
     "httpx>=0.28.0",
     "pydantic>=2.10",
     "pydantic-settings>=2.12.0",

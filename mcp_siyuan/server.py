@@ -447,6 +447,9 @@ def main() -> None:
             host=settings.host,
             port=settings.port,
             stateless_http=True,
+            # fastmcp >=3.4.3 rejects non-localhost Host with 421 unless allowed_hosts
+            # set (edge is CF-Access/Tailscale gated). Requires fastmcp>=3.4.3.
+            allowed_hosts=["*"],
         )
     else:
         mcp.run()
