@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.26] - 2026-07-08
+
+- openspec: reference consolidated cdit store
+
+
 ## [0.2.24] - 2026-06-30
 
 - chore(deps): security upgrades (pip-audit)
