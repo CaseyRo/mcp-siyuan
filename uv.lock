@@ -791,7 +791,7 @@ wheels = [
 
 [[package]]
 name = "mcp-siyuan"
-version = "0.2.25"
+version = "0.2.26"
 source = { editable = "." }
 dependencies = [
     { name = "authlib" },
