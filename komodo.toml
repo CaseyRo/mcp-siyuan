@@ -10,7 +10,7 @@ enabled = true
 name = "git-mcp-siyuan-nebula"
 description = "MCP server for SiYuan Notes (FastMCP 3.x)"
 deploy = true
-tags = ["mcp"]
+tags = ["cdit"]
 
 [stack.config]
 server_id = "nebula-1"
