@@ -525,16 +525,6 @@ def _normalise_heading(text: str) -> str:
     return " ".join(text.split()).strip().lower()
 
 
-def _heading_level(subtype: str) -> int:
-    """Return numeric heading level from a SiYuan subtype like 'h2'."""
-    if not subtype or len(subtype) < 2 or subtype[0].lower() != "h":
-        return 99
-    try:
-        return int(subtype[1:])
-    except ValueError:
-        return 99
-
-
 async def _find_section(
     doc_id: str, section_heading: str
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]]]:
@@ -542,47 +532,56 @@ async def _find_section(
 
     Returns (heading_row, section_blocks, all_headings) where
     ``section_blocks`` is the list of blocks under ``heading_row`` up to (but
-    not including) the next heading at the same or higher level. Match is
-    case-insensitive and whitespace-tolerant.
+    not including) the next heading at the same or higher level, in document
+    order. Match is case-insensitive and whitespace-tolerant.
+
+    Two SiYuan facts drive this implementation (CDI-1712):
+
+    * A block's ``parent_id`` is the heading it sits below, not the document.
+      A doc whose body hangs off a single H1 therefore has *no* H2 as a direct
+      child of the document, so headings must be found by ``root_id``.
+    * ``blocks.sort`` is a block-*type* weight used for search ranking
+      (d=0, h=5, p=10, l=20 ...), not document order — every heading in a
+      document shares ``sort = 5``, so it cannot delimit a section.
+      ``/api/block/getChildBlocks`` is the ordered view of "the blocks below
+      this heading"; the kernel treats a heading as a leaf block, so its
+      section is not a ``parent_id`` subtree either.
+
+    Raises:
+        ValueError: if the document contains more than one heading matching
+            ``section_heading`` — picking one silently is how a document ends
+            up with two divergent copies of the same section.
     """
     safe_doc = doc_id
     if any(c in doc_id for c in ("'", '"', ";", "\n")):
         raise ValueError("doc_id contains unsafe characters")
 
-    # 1. Fetch all blocks at the document level, ordered by sort, so we can
-    #    determine section boundaries by traversal.
     rows = await sy.call(
         "/api/query/sql",
         stmt=(
-            f"SELECT id, type, subtype, content, sort FROM blocks "
-            f"WHERE root_id = '{safe_doc}' AND parent_id = '{safe_doc}' "
-            f"ORDER BY sort ASC LIMIT 1000"
+            f"SELECT id, type, subtype, content FROM blocks "
+            f"WHERE root_id = '{safe_doc}' AND type = 'h' LIMIT 1000"
         ),
     )
-    blocks = rows if isinstance(rows, list) else []
-    headings = [b for b in blocks if b.get("type") == "h"]
+    headings = rows if isinstance(rows, list) else []
 
     target = _normalise_heading(section_heading)
-    heading_row: dict[str, Any] | None = None
-    for h in headings:
-        if _normalise_heading(h.get("content") or "") == target:
-            heading_row = h
-            break
-    if heading_row is None:
+    matches = [
+        h for h in headings if _normalise_heading(h.get("content") or "") == target
+    ]
+    if len(matches) > 1:
+        ids = ", ".join(str(m.get("id")) for m in matches)
+        raise ValueError(
+            f"Section heading '{section_heading}' matches {len(matches)} headings "
+            f"in doc {doc_id} ({ids}). Refusing to guess which one to write to — "
+            "de-duplicate the document first."
+        )
+    if not matches:
         return None, [], headings
 
-    # 2. Walk forward from the heading; stop at the next heading at same or
-    #    higher level (numerically lower or equal subtype).
-    h_level = _heading_level(heading_row.get("subtype") or "")
-    start_sort = heading_row.get("sort", 0)
-    section_blocks: list[dict[str, Any]] = []
-    for b in blocks:
-        if b.get("sort", 0) <= start_sort or b.get("id") == heading_row.get("id"):
-            continue
-        if b.get("type") == "h" and _heading_level(b.get("subtype") or "") <= h_level:
-            break
-        section_blocks.append(b)
-    return heading_row, section_blocks, headings
+    heading_row = matches[0]
+    kids = await sy.call("/api/block/getChildBlocks", id=heading_row["id"])
+    return heading_row, (kids if isinstance(kids, list) else []), headings
 
 
 async def upsert_section(
@@ -600,7 +599,11 @@ async def upsert_section(
     place. The heading itself is preserved.
 
     If no matching heading is found, appends a new ``# ... heading_level``
-    heading at the end of the document followed by ``markdown``.
+    heading at the end of the document followed by ``markdown``. **Check
+    ``action``**: ``"created"`` means nothing matched and a brand-new section
+    was added at the end of the document — if you meant to update an existing
+    section, that is a miss, not a success. If two headings in the document
+    carry the same text the call fails rather than picking one.
 
     Args:
         doc_id: The document block ID.
@@ -613,6 +616,10 @@ async def upsert_section(
 
     Returns:
         ``{"ok": True, "action": "replaced" | "created", "heading_id": <id>}``.
+        ``heading_id`` is ``None`` when ``action == "created"``.
+
+    Raises:
+        ValueError: If more than one heading in the document matches.
     """
     if not 1 <= int(heading_level) <= 6:
         raise ValueError("heading_level must be between 1 and 6")
@@ -692,7 +699,8 @@ async def append_to_section(
         ``{"ok": True, "heading_id": <id>, "anchor_id": <last-block-id>}``.
 
     Raises:
-        ValueError: If no heading with the given name is found.
+        ValueError: If no heading with the given name is found, or if more
+            than one heading in the document matches.
     """
 
     async def _call() -> SectionResult:

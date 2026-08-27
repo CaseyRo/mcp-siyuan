@@ -513,24 +513,51 @@ async def test_bulk_set_attrs_mixed_results(mock_sy):
     assert results[1].block_id == "b2"
 
 
-# --- upsert_section + append_to_section (CDI-1050 / CDI-1052) ---
+# --- upsert_section + append_to_section (CDI-1050 / CDI-1052 / CDI-1712) ---
 
 
-# A small fixture document at parent=doc1, ordered by sort:
-#   h1 (subtype h2) "Project Identity"
-#   p1 paragraph
-#   h2 (subtype h3) "Sub"  (still inside Project Identity)
-#   p2 paragraph
-#   h3 (subtype h2) "DoD"
-#   p3 paragraph
-_SECTION_BLOCKS = [
-    {"id": "h1", "type": "h", "subtype": "h2", "content": "Project Identity", "sort": 0},
-    {"id": "p1", "type": "p", "subtype": "", "content": "line one", "sort": 10},
-    {"id": "h2", "type": "h", "subtype": "h3", "content": "Sub", "sort": 20},
-    {"id": "p2", "type": "p", "subtype": "", "content": "sub line", "sort": 30},
-    {"id": "h3", "type": "h", "subtype": "h2", "content": "DoD", "sort": 40},
-    {"id": "p3", "type": "p", "subtype": "", "content": "dod line", "sort": 50},
+# Fixture mirrors real SiYuan shape (verified against the live kernel):
+#   * every heading in a doc hangs off the doc's single H1, not off the doc,
+#     so `parent_id = <doc>` sees only the H1;
+#   * `blocks.sort` is a block-TYPE weight — every heading is sort 5 — so it
+#     cannot delimit a section;
+#   * `/api/block/getChildBlocks(<heading>)` is the ordered section body.
+_DOC_HEADINGS = [
+    {"id": "h0", "type": "h", "subtype": "h1", "content": "CDIT MCP Server Standards"},
+    {"id": "h1", "type": "h", "subtype": "h2", "content": "Project Identity"},
+    {"id": "h2", "type": "h", "subtype": "h3", "content": "Sub"},
+    {"id": "h3", "type": "h", "subtype": "h2", "content": "DoD"},
+    # Real-world offenders from doc 20260412124804-e6idjg9 (CDI-1712).
+    {"id": "h6", "type": "h", "subtype": "h2",
+     "content": "6. Server Assembly (server.py)"},
+    {"id": "h15", "type": "h", "subtype": "h2", "content": "15. Corrections log"},
 ]
+
+_SECTION_BODIES = {
+    "h1": [
+        {"id": "p1", "type": "p", "content": "line one"},
+        {"id": "h2", "type": "h", "subtype": "h3", "content": "Sub"},
+        {"id": "p2", "type": "p", "content": "sub line"},
+    ],
+    "h6": [{"id": "p6", "type": "p", "content": "assembly body"}],
+    "h15": [{"id": "p15", "type": "p", "content": "corrections body"}],
+}
+
+
+def _section_mock(calls, headings=None, bodies=None):
+    """Build a mock sy.call that speaks the two endpoints _find_section uses."""
+    headings = _DOC_HEADINGS if headings is None else headings
+    bodies = _SECTION_BODIES if bodies is None else bodies
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/query/sql":
+            return headings
+        if endpoint == "/api/block/getChildBlocks":
+            return bodies.get(kwargs.get("id"), [])
+        return None
+
+    return mock_call
 
 
 @pytest.mark.asyncio
@@ -539,14 +566,7 @@ async def test_upsert_section_replaces_existing(mock_sy):
     from mcp_siyuan.tools.write import upsert_section
 
     calls: list[tuple[str, dict]] = []
-
-    async def mock_call(endpoint, **kwargs):
-        calls.append((endpoint, kwargs))
-        if endpoint == "/api/query/sql":
-            return _SECTION_BLOCKS
-        return None
-
-    mock_sy.call = mock_call
+    mock_sy.call = _section_mock(calls)
     result = await upsert_section(
         doc_id="doc1",
         section_heading="Project Identity",
@@ -557,10 +577,8 @@ async def test_upsert_section_replaces_existing(mock_sy):
     assert result.heading_id == "h1"
 
     deletes = [c for c in calls if c[0] == "/api/block/deleteBlock"]
-    # Section content under h1 (subtype h2) runs until h3 (subtype h2):
-    # → p1, h2, p2 (3 blocks)
-    deleted_ids = [d[1]["id"] for d in deletes]
-    assert set(deleted_ids) == {"p1", "h2", "p2"}
+    # Section body of h1 runs to the next h2 and includes the nested h3.
+    assert {d[1]["id"] for d in deletes} == {"p1", "h2", "p2"}
 
     inserts = [c for c in calls if c[0] == "/api/block/insertBlock"]
     assert inserts
@@ -574,14 +592,7 @@ async def test_upsert_section_creates_when_missing(mock_sy):
     from mcp_siyuan.tools.write import upsert_section
 
     calls: list[tuple[str, dict]] = []
-
-    async def mock_call(endpoint, **kwargs):
-        calls.append((endpoint, kwargs))
-        if endpoint == "/api/query/sql":
-            return _SECTION_BLOCKS
-        return None
-
-    mock_sy.call = mock_call
+    mock_sy.call = _section_mock(calls)
     result = await upsert_section(
         doc_id="doc1",
         section_heading="Brand New",
@@ -602,12 +613,8 @@ async def test_upsert_section_case_and_whitespace_tolerant(mock_sy):
     """Heading match is case-insensitive and whitespace-tolerant."""
     from mcp_siyuan.tools.write import upsert_section
 
-    async def mock_call(endpoint, **kwargs):
-        if endpoint == "/api/query/sql":
-            return _SECTION_BLOCKS
-        return None
-
-    mock_sy.call = mock_call
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _section_mock(calls)
     result = await upsert_section(
         doc_id="doc1",
         section_heading="  project   IDENTITY ",
@@ -618,26 +625,116 @@ async def test_upsert_section_case_and_whitespace_tolerant(mock_sy):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("heading", "expected_id"),
+    [
+        # CDI-1712: both failed live against doc 20260412124804-e6idjg9.
+        ("6. Server Assembly (server.py)", "h6"),  # ordinal + parentheses
+        ("15. Corrections log", "h15"),  # leading ordinal
+        ("Project Identity", "h1"),  # plain heading — guard the normal path
+    ],
+)
+async def test_upsert_section_matches_nested_headings(
+    mock_sy, heading, expected_id
+):
+    """Headings nested under a doc's H1 must still be found, not duplicated.
+
+    Regression for CDI-1712: `_find_section` scoped its lookup to
+    `parent_id = <doc>`, but SiYuan parents a heading to the heading above it.
+    In a doc wrapped in a single H1 that made every H2/H3 invisible, so
+    upsert_section appended a second identical heading and reported
+    `{"ok": true, "action": "created"}`.
+    """
+    from mcp_siyuan.tools.write import upsert_section
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _section_mock(calls)
+    result = await upsert_section(
+        doc_id="doc1", section_heading=heading, markdown="fresh body"
+    )
+    assert result.action == "replaced"
+    assert result.heading_id == expected_id
+    # The whole point: no second heading is appended.
+    assert not [c for c in calls if c[0] == "/api/block/appendBlock"]
+
+    # The lookup must be scoped by root_id, never parent_id.
+    sql = next(c for c in calls if c[0] == "/api/query/sql")[1]["stmt"]
+    assert "root_id = 'doc1'" in sql
+    assert "parent_id" not in sql
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("heading", "expected_anchor"),
+    [
+        ("6. Server Assembly (server.py)", "p6"),
+        ("15. Corrections log", "p15"),
+        ("Project Identity", "p2"),
+    ],
+)
+async def test_append_to_section_matches_nested_headings(
+    mock_sy, heading, expected_anchor
+):
+    """append_to_section must find the same nested headings (CDI-1712).
+
+    Live symptom: `Section heading '15. Corrections log' not found` raised
+    against a document that visibly contained that heading.
+    """
+    from mcp_siyuan.tools.write import append_to_section
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _section_mock(calls)
+    result = await append_to_section(
+        doc_id="doc1", section_heading=heading, markdown="appended line"
+    )
+    assert result.ok is True
+    assert result.anchor_id == expected_anchor
+    inserts = [c for c in calls if c[0] == "/api/block/insertBlock"]
+    assert inserts and inserts[0][1]["previousID"] == expected_anchor
+
+
+@pytest.mark.asyncio
+async def test_section_tools_refuse_ambiguous_heading(mock_sy):
+    """Two headings with the same text = refuse loudly, never pick one.
+
+    This is the state a document is left in once the CDI-1712 duplicate has
+    been written; silently editing one of the two copies would compound it.
+    """
+    from mcp_siyuan.tools.write import append_to_section, upsert_section
+
+    dupes = [
+        {"id": "hA", "type": "h", "subtype": "h2", "content": "15. Corrections log"},
+        {"id": "hB", "type": "h", "subtype": "h2", "content": "15. Corrections Log"},
+    ]
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _section_mock(calls, headings=dupes)
+
+    with pytest.raises(ValueError, match="matches 2 headings"):
+        await upsert_section(
+            doc_id="doc1", section_heading="15. Corrections log", markdown="x"
+        )
+    with pytest.raises(ValueError, match="matches 2 headings"):
+        await append_to_section(
+            doc_id="doc1", section_heading="15. Corrections log", markdown="x"
+        )
+    # Nothing was written.
+    assert not [c for c in calls if c[0].startswith("/api/block/")]
+
+
+@pytest.mark.asyncio
 async def test_append_to_section_inserts_after_last_block(mock_sy):
     """append_to_section inserts after the last block in the section."""
     from mcp_siyuan.tools.write import append_to_section
 
     calls: list[tuple[str, dict]] = []
-
-    async def mock_call(endpoint, **kwargs):
-        calls.append((endpoint, kwargs))
-        if endpoint == "/api/query/sql":
-            return _SECTION_BLOCKS
-        return None
-
-    mock_sy.call = mock_call
+    mock_sy.call = _section_mock(calls)
     result = await append_to_section(
         doc_id="doc1",
         section_heading="Project Identity",
         markdown="appended line",
     )
     assert result.ok is True
-    # Last block of "Project Identity" section is p2 (h2 ends section).
+    # Last block of "Project Identity" section is p2 (next h2 ends section).
     assert result.anchor_id == "p2"
     inserts = [c for c in calls if c[0] == "/api/block/insertBlock"]
     assert inserts and inserts[0][1]["previousID"] == "p2"
@@ -649,12 +746,8 @@ async def test_append_to_section_errors_on_missing_heading(mock_sy):
     """append_to_section raises when the heading is not found."""
     from mcp_siyuan.tools.write import append_to_section
 
-    async def mock_call(endpoint, **kwargs):
-        if endpoint == "/api/query/sql":
-            return _SECTION_BLOCKS
-        return None
-
-    mock_sy.call = mock_call
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _section_mock(calls)
     with pytest.raises(ValueError, match="not found"):
         await append_to_section(
             doc_id="doc1", section_heading="Missing", markdown="x"
@@ -666,16 +759,14 @@ async def test_append_to_section_empty_section(mock_sy):
     """When section has no body blocks, anchor falls back to heading id."""
     from mcp_siyuan.tools.write import append_to_section
 
-    only_heading = [
-        {"id": "h-only", "type": "h", "subtype": "h2", "content": "Empty", "sort": 0},
-    ]
-
-    async def mock_call(endpoint, **kwargs):
-        if endpoint == "/api/query/sql":
-            return only_heading
-        return None
-
-    mock_sy.call = mock_call
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _section_mock(
+        calls,
+        headings=[
+            {"id": "h-only", "type": "h", "subtype": "h2", "content": "Empty"}
+        ],
+        bodies={},
+    )
     result = await append_to_section(
         doc_id="doc1", section_heading="Empty", markdown="first"
     )
