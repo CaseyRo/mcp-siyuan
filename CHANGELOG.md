@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.29] - 2026-08-27
+
+- fix(sections): find headings nested under a doc's H1, not just doc children
+
+
 ## [0.2.26] - 2026-07-08
 
 - openspec: reference consolidated cdit store
