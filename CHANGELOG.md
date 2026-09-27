@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.30] - 2026-09-27
+
+- ci: add blocking PR/push test workflow and MCP protocol test (#43)
+
+
 ## [0.2.29] - 2026-08-27
 
 - fix(sections): find headings nested under a doc's H1, not just doc children
