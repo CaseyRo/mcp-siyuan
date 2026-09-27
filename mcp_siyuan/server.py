@@ -15,6 +15,7 @@ from mcp.types import Icon, ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from mcp_siyuan.usage import UsageMiddleware
 from mcp_siyuan import __version__
 from mcp_siyuan.auth import BearerTokenVerifier
 from mcp_siyuan.client import sy
@@ -145,6 +146,7 @@ mcp = FastMCP(
         ),
     ],
 )
+mcp.add_middleware(UsageMiddleware("siyuan"))
 
 
 def _register(

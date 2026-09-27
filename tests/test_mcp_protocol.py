@@ -54,3 +54,14 @@ async def test_a_tool_call_round_trips():
     sy.call.assert_awaited_once_with("/api/notebook/lsNotebooks")
     assert result.content, "list_notebooks returned no content"
     assert "nb1" in result.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_a_tool_call_writes_one_usage_line(capsys):
+    with patch("mcp_siyuan.tools.read.sy") as sy:
+        sy.call = AsyncMock(return_value={"notebooks": []})
+        async with Client(mcp) as client:
+            await client.call_tool("list_notebooks", {})
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if '"mcp_usage"' in ln]
+    assert len(lines) == 1
+    assert all(s in lines[0] for s in ('"siyuan"', '"list_notebooks"', '"outcome": "ok"'))
