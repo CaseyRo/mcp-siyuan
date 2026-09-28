@@ -7,9 +7,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from importlib import metadata as importlib_metadata
 
-import fastmcp
 from fastmcp import FastMCP
 from mcp.types import Icon, ToolAnnotations
 from starlette.requests import Request
@@ -75,26 +73,6 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
-def _check_fastmcp_version() -> None:
-    """Log FastMCP version at startup; warn loudly if outside the pinned range."""
-    expected = "3.4.2"  # floor pin (see pyproject: >=3.4.2,<4.0.0)
-    try:
-        installed = importlib_metadata.version("fastmcp")
-    except importlib_metadata.PackageNotFoundError:
-        installed = getattr(fastmcp, "__version__", "unknown")
-    logger.info("fastmcp loaded", extra={"fastmcp_version": installed})
-    if installed.split(".")[0] != expected.split(".")[0]:
-        logger.error(
-            "fastmcp version mismatch: expected %s.x (>=%s,<4.0.0), got %s. "
-            "Annotation/structured-output ergonomics may differ.",
-            expected.split(".")[0],
-            expected,
-            installed,
-        )
-
-
-_check_fastmcp_version()
-
 _api_key = settings.mcp_api_key
 if settings.transport == "http" and not _api_key:
     raise SystemExit(
@@ -141,7 +119,7 @@ mcp = FastMCP(
     icons=[
         Icon(
             src="https://b3log.org/images/brand/siyuan-128.png",
-            mimeType="image/png",
+            mime_type="image/png",
             sizes=["128x128"],
         ),
     ],
@@ -161,16 +139,16 @@ def _register(
 ) -> None:
     """Register a traced tool with annotations + tags.
 
-    Every SiYuan tool touches the external kernel, so ``openWorldHint`` defaults
+    Every SiYuan tool touches the external kernel, so ``open_world_hint`` defaults
     to True. The traced_tool wrapper preserves the wrapped signature, so FastMCP
     still introspects the real parameters and (where present) the ``ctx`` arg.
     """
     annotations = ToolAnnotations(
         title=title,
-        readOnlyHint=read_only,
-        destructiveHint=destructive,
-        idempotentHint=idempotent,
-        openWorldHint=open_world,
+        read_only_hint=read_only,
+        destructive_hint=destructive,
+        idempotent_hint=idempotent,
+        open_world_hint=open_world,
     )
     mcp.tool(traced_tool(func), annotations=annotations, tags=tags)
 
@@ -285,7 +263,6 @@ async def notebooks_resource() -> list[dict]:
     ),
     mime_type="application/json",
     tags={"reference", "read"},
-    annotations={"readOnlyHint": True, "idempotentHint": True},
 )
 async def doc_outline_resource(doc_id: str) -> str:
     """Resource-template view of a document's heading outline.
@@ -449,9 +426,6 @@ def main() -> None:
             host=settings.host,
             port=settings.port,
             stateless_http=True,
-            # fastmcp >=3.4.3 rejects non-localhost Host with 421 unless allowed_hosts
-            # set (edge is CF-Access/Tailscale gated). Requires fastmcp>=3.4.3.
-            allowed_hosts=["*"],
         )
     else:
         mcp.run()

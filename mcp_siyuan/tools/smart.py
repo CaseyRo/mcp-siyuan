@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Annotated, Any
 
-from fastmcp import Context
+from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from mcp_siyuan.client import sy
@@ -233,7 +233,6 @@ async def search_by_tag(tag: str) -> list[TaggedBlock]:
 async def get_block_children(
     id: str,
     depth: Annotated[int, Field(ge=1, le=5)] = 2,
-    ctx: Context | None = None,
 ) -> BlockChildren:
     """[notes] Get a block and its child blocks as a tree structure.
 
@@ -251,18 +250,9 @@ async def get_block_children(
     all_blocks: dict[str, list[dict[str, Any]]] = {}  # parent_id -> children
     current_ids = [safe_id]
 
-    for level in range(depth):
+    for _ in range(depth):
         if not current_ids:
             break
-        if ctx is not None:
-            try:
-                await ctx.report_progress(
-                    progress=level + 1,
-                    total=depth,
-                    message=f"depth level {level + 1}/{depth}",
-                )
-            except Exception:  # pragma: no cover - defensive
-                logger.debug("ctx.report_progress failed", exc_info=True)
         id_list = ", ".join(f"'{_sanitize(cid)}'" for cid in current_ids)
         stmt = (
             f"SELECT id, content, type, sort, parent_id "
@@ -376,13 +366,13 @@ async def capture_task(
         notebooks = nb_data.get("notebooks", []) if nb_data else []
         open_nbs = [nb for nb in notebooks if not nb.get("closed", False)]
         if not open_nbs:
-            return CaptureTaskResult(error="No open notebooks found")
+            raise ToolError("No open notebooks found")
         notebook = open_nbs[0]["id"]
 
     # Create or open today's daily note
     daily_id = await sy.call("/api/filetree/createDailyNote", notebook=notebook)
     if not daily_id:
-        return CaptureTaskResult(error="Failed to create daily note")
+        raise ToolError("Failed to create daily note")
     doc_id = daily_id if isinstance(daily_id, str) else str(daily_id)
 
     # Append the task
@@ -611,7 +601,7 @@ async def get_doc_summary(
     )
     doc = doc_rows[0] if isinstance(doc_rows, list) and doc_rows else None
     if not doc:
-        return DocSummary(id=id, error=f"Document {id} not found")
+        raise ToolError(f"Document {id} not found")
 
     # Direct child count.
     count_rows = await sy.call(
