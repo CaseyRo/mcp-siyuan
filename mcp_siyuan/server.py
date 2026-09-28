@@ -14,7 +14,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from mcp_siyuan.usage import UsageMiddleware
-from mcp_siyuan import __version__
+from mcp_siyuan import GIT_COMMIT, __version__
 from mcp_siyuan.auth import BearerTokenVerifier
 from mcp_siyuan.client import sy
 from mcp_siyuan.config import settings
@@ -398,6 +398,7 @@ async def health_check(request: Request) -> JSONResponse:
         "status": "healthy" if upstream_ok else "degraded",
         "service": "mcp-siyuan",
         "version": __version__,
+        "git_commit": GIT_COMMIT,
         "upstream_reachable": upstream_ok,
         "uptime_seconds": int(
             (datetime.now(timezone.utc) - _start_time).total_seconds()
