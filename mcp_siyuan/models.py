@@ -57,7 +57,7 @@ class SearchResult(BaseModel):
 #   * carries an optional ``error: str | None = None`` for error payloads, and
 #   * sets ``model_config = ConfigDict(extra="allow")`` so kernel-passthrough
 #     keys (e.g. SiYuan's notebook object, transaction arrays) never trip
-#     validation. (This is the exact bug fixed in mcp-zernio.)
+#     validation.
 # ---------------------------------------------------------------------------
 
 _ALLOW = ConfigDict(extra="allow")

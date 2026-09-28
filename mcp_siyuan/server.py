@@ -107,7 +107,7 @@ How to pick a tool:
   `siyuan_delete_block`, `siyuan_move_doc`) are annotated destructive — confirm intent.
 
 Disambiguation across the fleet: notes/documents -> this server (siyuan);
-social posts -> zernio; blog/long-form writing -> writings.
+blog/long-form writing -> writings.
 
 Single-replica: in-process idempotency + diag caches assume one instance.
 """

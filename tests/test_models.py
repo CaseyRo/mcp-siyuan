@@ -32,8 +32,7 @@ from mcp_siyuan.models import (
 # Every output-schema model paired with a representative SUCCESS payload whose
 # keys are the EXACT top-level wire keys the tool emits today. The contract
 # tests below assert (a) those keys round-trip unchanged and (b) the model also
-# validates an error payload — the dual-validation rule we regressed in
-# mcp-zernio.
+# validates an error payload (the dual-validation rule).
 _SUCCESS_PAYLOADS = {
     NotebookInfo: {"id": "nb1", "name": "Work", "icon": "x", "sort": 1, "closed": True},
     SqlRow: {"id": "b1", "content": "x", "markdown": "## h"},
@@ -155,7 +154,7 @@ def test_success_payload_preserves_top_level_keys(model, payload):
 def test_error_payload_validates(model):
     """Every output model must validate a bare ``{"error": "..."}`` payload.
 
-    This is the exact dual-validation bug fixed in mcp-zernio: a model used as an
+    The dual-validation rule: a model used as an
     output_schema MUST accept the error path, not just the success path.
     """
     instance = model(error="boom")
