@@ -1,4 +1,5 @@
-# Live host is nebula-1 (ubuntu-smurf-mirror decommissioned 2026-06-10). See ARCHITECTURE.md.
+# Record of the live Komodo config; not synced, so change it in Komodo and keep this in step.
+# Live host is nebula-1 (ubuntu-smurf-mirror decommissioned 2026-06-10).
 [[server]]
 name = "nebula-1"
 [server.config]
@@ -8,7 +9,7 @@ enabled = true
 # Live Komodo stack is named `git-mcp-siyuan-nebula` — this stanza name matches it.
 [[stack]]
 name = "git-mcp-siyuan-nebula"
-description = "MCP server for SiYuan Notes (FastMCP 3.x)"
+description = "MCP server for SiYuan Notes (FastMCP 4.x)"
 deploy = true
 tags = ["cdit"]
 
@@ -17,6 +18,8 @@ server_id = "nebula-1"
 git_provider = "github.com"
 repo = "CaseyRo/mcp-siyuan"
 branch = "main"
+# compose.yaml builds from source (build: .); no registry image is pulled.
+file_paths = ["compose.yaml"]
 environment = """
 SIYUAN_TOKEN = [[SIYUAN_TOKEN]]
 MCP_API_KEY = [[MCP_SIYUAN_API_KEY]]

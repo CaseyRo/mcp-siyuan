@@ -1,3 +1,10 @@
+# /health git_commit. Komodo builds from its clone, so .git is in the context;
+# without one (tarball, worktree) this records "unknown".
+FROM alpine/git:2.54.0 AS rev
+RUN --mount=type=bind,target=/src \
+    git -c safe.directory='*' -C /src rev-parse --short HEAD > /git_commit 2>/dev/null \
+    || echo unknown > /git_commit
+
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
@@ -27,6 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/.venv /app/.venv
 COPY mcp_siyuan/ ./mcp_siyuan/
 COPY healthcheck.py ./
+COPY --from=rev /git_commit /app/.git_commit
 
 ENV PATH="/app/.venv/bin:$PATH"
 

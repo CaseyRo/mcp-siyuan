@@ -1,6 +1,6 @@
 # mcp-siyuan
 
-[Model Context Protocol](https://modelcontextprotocol.io) server for [SiYuan Notes](https://b3log.org/siyuan/), built on [FastMCP](https://github.com/jlowin/fastmcp) 3.x.
+[Model Context Protocol](https://modelcontextprotocol.io) server for [SiYuan Notes](https://b3log.org/siyuan/), built on [FastMCP](https://github.com/jlowin/fastmcp) 4.x.
 
 `mcp-siyuan` runs as a **sidecar** to the SiYuan kernel and exposes its HTTP API as MCP tools. It speaks two transports — **streamable HTTP** for remote clients (Claude Desktop, Claude.ai connectors, n8n) and **stdio** for local Claude Code — so the same image and code path serve both use cases.
 
@@ -151,7 +151,7 @@ This repo follows a small set of conventions worth knowing if you're contributin
 
 - **Tool registration is explicit** in `mcp_siyuan/server.py`: a small `_register(...)` helper wraps each tool function with `traced_tool(...)`, attaches `ToolAnnotations` (read-only / destructive / idempotent / open-world + title) and tags, and hands it to `mcp.tool(...)`. The wrapper preserves `__name__`, `__doc__`, and the full signature (including any injected `ctx: Context`) so FastMCP can introspect the schema.
 - **Server instructions** (`FastMCP(instructions=...)`) orient clients on the SiYuan sidecar model and the SQL-first query pattern.
-- **Context-aware tools**: long-running / batch tools (`bulk_create_documents`, `bulk_set_attrs`, `get_block_children`, `export_pdf`) accept an optional `ctx: Context` and emit `ctx.info` / `ctx.report_progress` events. Context emission is best-effort and never breaks the tool call.
+- **No progress events**: tools take no `ctx: Context`. The fastmcp 4 migration removed the `ctx.info` / `ctx.report_progress` calls, since the Cloudflare portal forwards no server-to-client messages.
 - **Auth uses a `TokenVerifier`** subclass (`mcp_siyuan/auth.py`). HMAC-compared static bearer (the `MCP_API_KEY`). Required in HTTP mode; the server refuses to start without it.
 - **The `/health` endpoint** is registered with `@mcp.custom_route("/health", methods=["GET"])`. It probes the upstream SiYuan kernel with a 30-second cache (configurable via `UPSTREAM_PROBE_INTERVAL`). Pass `?diag=1` to also dump the recent-tool-call ring buffer (see Operator Runbook).
 - **Error propagation**: tools raise normal exceptions (`SiYuanError`, `ValueError`, etc.). FastMCP catches and converts them to MCP error payloads. The `traced_tool` wrapper appends `[request_id=...]` to the error message so clients can correlate.
@@ -314,14 +314,7 @@ uv run pytest tests/test_readme_tool_catalog.py
 
 ## Versioning & Release
 
-Two places need to agree on the version:
-
-- `pyproject.toml`'s `[project] version`
-- `mcp_siyuan/__init__.py`'s `__version__`
-
-The release commit pattern (see commit `8f82d78`): bump both in a single `chore: sync __init__.__version__ with pyproject (X.Y.Z)` commit, followed by a `chore(release): vX.Y.Z [skip ci]` commit. The drift is enforced by humans, not CI.
-
-`CHANGELOG.md` is updated alongside the release commit.
+Releases are git tags only. Every push to `main` (protected: PR + the `test` check) runs `.github/workflows/release.yml`: tests, `pip-audit`, the next patch tag `vX.Y.Z`, and a GHCR image the stack does not use. Nothing is committed back, so `pyproject.toml`'s version and `CHANGELOG.md` stay static and lag the tags. Production (Komodo stack `git-mcp-siyuan-nebula`) builds from source on each push; `/health` reports the package version plus the `git_commit` baked at build time. Trust the git tags for the release number.
 
 ---
 
