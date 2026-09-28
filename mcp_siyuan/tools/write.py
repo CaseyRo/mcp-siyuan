@@ -635,6 +635,17 @@ async def _find_section(
     matches = [
         h for h in headings if _normalise_heading(h.get("content") or "") == target
     ]
+    if not matches:
+        # The SQL index lags the kernel (up to ~1h for API-created docs), so a
+        # miss there is not proof the heading is absent. Ask the kernel before
+        # the caller appends a duplicate section.
+        kids = await sy.call("/api/block/getChildBlocks", id=doc_id)
+        matches = [
+            {**k, "subtype": k.get("subType", "")}
+            for k in (kids if isinstance(kids, list) else [])
+            if k.get("type") == "h"
+            and _normalise_heading(k.get("content") or "") == target
+        ]
     if len(matches) > 1:
         ids = ", ".join(str(m.get("id")) for m in matches)
         raise ValueError(

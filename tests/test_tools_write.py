@@ -674,6 +674,28 @@ async def test_upsert_section_creates_when_missing(mock_sy):
 
 
 @pytest.mark.asyncio
+async def test_upsert_section_fresh_doc_uses_kernel_not_lagging_index(mock_sy):
+    """A doc the SQL index hasn't caught up on: the heading exists in the
+    kernel, so upsert must replace it, not append a duplicate section."""
+    from mcp_siyuan.tools.write import upsert_section
+
+    calls: list[tuple[str, dict]] = []
+    bodies = {
+        "doc1": [
+            {"id": "hN", "type": "h", "subType": "h2", "content": "Notes"},
+            {"id": "pN", "type": "p", "content": "old"},
+        ],
+        "hN": [{"id": "pN", "type": "p", "content": "old"}],
+    }
+    mock_sy.call = _section_mock(calls, headings=[], bodies=bodies)
+    result = await upsert_section(doc_id="doc1", section_heading="Notes", markdown="new")
+    assert result.action == "replaced"
+    assert result.heading_id == "hN"
+    assert not [c for c in calls if c[0] == "/api/block/appendBlock"]
+    assert [c[1]["id"] for c in calls if c[0] == "/api/block/deleteBlock"] == ["pN"]
+
+
+@pytest.mark.asyncio
 async def test_upsert_section_case_and_whitespace_tolerant(mock_sy):
     """Heading match is case-insensitive and whitespace-tolerant."""
     from mcp_siyuan.tools.write import upsert_section
