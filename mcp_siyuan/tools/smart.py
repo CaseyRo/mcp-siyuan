@@ -6,6 +6,7 @@ import logging
 import re
 from typing import Annotated, Any
 
+import anyio
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
@@ -25,6 +26,8 @@ from mcp_siyuan.models import (
     TagCount,
     TaskItem,
 )
+from mcp_siyuan.tools.read import get_block
+from mcp_siyuan.tools.write import _op_id
 
 logger = logging.getLogger(__name__)
 
@@ -230,59 +233,55 @@ async def search_by_tag(tag: str) -> list[TaggedBlock]:
     return [TaggedBlock(**row) for row in rows]
 
 
+# Only these hold child blocks in the kernel tree. A heading is a leaf here:
+# getChildBlocks on a heading returns its section, which is already listed
+# as the heading's siblings.
+_CONTAINER_TYPES = {"d", "l", "i", "b", "s"}
+
+
 async def get_block_children(
     id: str,
     depth: Annotated[int, Field(ge=1, le=5)] = 2,
 ) -> BlockChildren:
-    """[notes] Get a block and its child blocks as a tree structure.
+    """[notes] Get a block and its child blocks as a tree, in document order.
 
     Useful for understanding document outline or navigating into a section.
-    Uses a single query per depth level instead of per-child queries.
+    Children come from the kernel (current even when the search index lags);
+    each node has id, type, subtype, content, parent_id, sort (its position
+    among its siblings) and children. Headings are listed as siblings of the
+    blocks below them, as in the document, so they have no children — except
+    when the heading itself is ``id``: then its section is returned.
 
     Args:
         id: The block or document ID to get children for.
         depth: How many levels deep to traverse (default 2, max 5).
     """
-    safe_id = _sanitize(id)
+    root = await get_block(_sanitize(id))
 
-    # Fetch all descendants up to the requested depth in one query per level
-    # Start with the direct children
-    all_blocks: dict[str, list[dict[str, Any]]] = {}  # parent_id -> children
-    current_ids = [safe_id]
+    async def _kids(parent: dict[str, Any], level: int) -> None:
+        raw = await sy.call("/api/block/getChildBlocks", id=parent["id"])
+        parent["children"] = [
+            {
+                "id": k.get("id", ""),
+                "type": k.get("type", ""),
+                "subtype": k.get("subType", ""),
+                "content": k.get("content") or k.get("markdown") or "",
+                "parent_id": parent["id"],
+                "sort": i,
+                "children": [],
+            }
+            for i, k in enumerate(raw if isinstance(raw, list) else [])
+        ]
+        if level < depth:
+            async with anyio.create_task_group() as tg:
+                for child in parent["children"]:
+                    if child["type"] in _CONTAINER_TYPES:
+                        tg.start_soon(_kids, child, level + 1)
 
-    for _ in range(depth):
-        if not current_ids:
-            break
-        id_list = ", ".join(f"'{_sanitize(cid)}'" for cid in current_ids)
-        stmt = (
-            f"SELECT id, content, type, sort, parent_id "
-            f"FROM blocks WHERE parent_id IN ({id_list}) "
-            f"ORDER BY sort ASC LIMIT 500"
-        )
-        data = await sy.call("/api/query/sql", stmt=stmt)
-        rows = data if isinstance(data, list) else []
-
-        next_ids = []
-        for row in rows:
-            pid = row.get("parent_id", "")
-            all_blocks.setdefault(pid, []).append(row)
-            next_ids.append(row.get("id", ""))
-        current_ids = next_ids
-
-    # Build tree from collected blocks
-    def _build_tree(parent_id: str) -> list[dict[str, Any]]:
-        children = all_blocks.get(parent_id, [])
-        for child in children:
-            child["children"] = _build_tree(child.get("id", ""))
-        return children
-
-    # Get the parent block info
-    parent_data = await sy.call("/api/block/getBlockInfo", id=safe_id)
+    tree: dict[str, Any] = {"id": id}
+    await _kids(tree, 1)
     return BlockChildren(
-        id=id,
-        content=parent_data.get("content", "") if parent_data else "",
-        type=parent_data.get("type", "") if parent_data else "",
-        children=_build_tree(safe_id),
+        id=id, content=root.content, type=root.type, children=tree["children"]
     )
 
 
@@ -389,7 +388,7 @@ async def capture_task(
         daily_note_id=doc_id,
         notebook=notebook,
         task=text,
-        transactions=result if isinstance(result, list) else [],
+        id=_op_id(result),
     )
 
 

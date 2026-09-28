@@ -73,7 +73,7 @@ All tools are exposed under the `siyuan_` prefix at the portal (e.g., `siyuan_li
 | `siyuan_get_backlinks` | Get all blocks that reference (link to) a given block or document. |
 | `siyuan_get_tags` | List all tags used across the workspace with their usage count. |
 | `siyuan_search_by_tag` | Find all blocks with a specific tag. |
-| `siyuan_get_block_children` | Get a block and its child blocks as a tree structure. |
+| `siyuan_get_block_children` | Get a block and its child blocks as a tree, in document order. |
 | `siyuan_search_with_context` | Search SiYuan and return results with surrounding context blocks. |
 | `siyuan_capture_task` | Append a new task checkbox to today's daily note. |
 | `siyuan_get_document_outline` | Get the heading outline of a document. |
@@ -108,7 +108,7 @@ The hand-written catalog is kept honest by `tests/test_readme_tool_catalog.py`, 
 
 Every tool is registered with [tool annotations](https://gofastmcp.com/) (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`, and a human-friendly `title`) plus tags (`read` / `write` / `smart` / `destructive` / `export`) so clients can auto-approve safe reads and gate only true destructive ops. Tools that returned structured dicts now return typed Pydantic models (`DocUpsertResult`, `DocExistsResult`, `BulkDocResult`, `BulkAttrResult`), so FastMCP advertises an `output_schema` and emits structured content. The wire-level JSON keys are unchanged from the previous prose `Returns:` contracts.
 
-**Write-tool response envelope (CDI-1093):** the write-result models (`WriteResult`, `DeleteBlockResult`, `DeleteDocResult`, `SectionResult`, `DocUpsertResult`) carry an optional `warnings: []` list for non-fatal advisories alongside the existing `ok` / `transactions` keys — additive, so callers that ignore it are unaffected. On a *failure*, transient errors (HTTP 502/503/504, transport faults) surface a `[retryable]` marker in the error message so callers know an identical retry is safe; the underlying `SiYuanError.retryable` flag drives this. (`create_document` still returns a bare document-ID string for backwards compatibility — wrapping it in an envelope would break existing callers.)
+**Write-tool response envelope (CDI-1093):** the write-result models (`WriteResult`, `DeleteBlockResult`, `DeleteDocResult`, `SectionResult`, `DocUpsertResult`) carry an optional `warnings: []` list for non-fatal advisories alongside `ok` and `id` (the block the write touched: the new block for insert/append, the target for update; `update_block` adds `inserted_ids`). The kernel's raw `transactions` echo (~4 KB of DOM per call) is not returned. On a *failure*, transient errors (HTTP 502/503/504, transport faults) surface a `[retryable]` marker in the error message so callers know an identical retry is safe; the underlying `SiYuanError.retryable` flag drives this. (`create_document` still returns a bare document-ID string for backwards compatibility — wrapping it in an envelope would break existing callers.)
 
 ### Resources
 

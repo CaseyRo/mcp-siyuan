@@ -47,6 +47,18 @@ async def test_c3_fields_survive_in_output_schemas():
 
 
 @pytest.mark.asyncio
+async def test_no_tool_returns_raw_kernel_transactions():
+    """Write results carry ids, never the kernel's DOM transaction echo."""
+    async with Client(mcp) as client:
+        tools = await client.list_tools()
+    leaking = [
+        t.name for t in tools
+        if "transactions" in ((t.output_schema or {}).get("properties") or {})
+    ]
+    assert leaking == []
+
+
+@pytest.mark.asyncio
 async def test_delete_proceeds_when_client_cannot_elicit():
     """No elicitation handler on the client: ctx.elicit fails fast, delete proceeds."""
     with patch("mcp_siyuan.tools.write.sy") as sy:

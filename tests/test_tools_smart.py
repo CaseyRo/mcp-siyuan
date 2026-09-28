@@ -7,7 +7,8 @@ import pytest
 
 @pytest.fixture
 def mock_sy():
-    with patch("mcp_siyuan.tools.smart.sy") as mock:
+    # get_block_children reuses read.get_block, so both modules share the mock.
+    with patch("mcp_siyuan.tools.smart.sy") as mock, patch("mcp_siyuan.tools.read.sy", mock):
         mock.call = AsyncMock()
         yield mock
 
@@ -228,39 +229,6 @@ async def test_search_by_tag_rejects_injection(mock_sy):
     with pytest.raises(ValueError, match="Unsafe characters"):
         await search_by_tag(tag="'; DROP TABLE blocks; --")
     mock_sy.call.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_get_block_children(mock_sy):
-    """get_block_children returns tree structure using batch queries."""
-    from mcp_siyuan.tools.smart import get_block_children
-
-    call_count = 0
-    async def mock_call(endpoint, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if endpoint == "/api/query/sql":
-            stmt = kwargs.get("stmt", "")
-            if "'doc1'" in stmt:
-                return [
-                    {"id": "h1", "content": "Heading 1", "type": "h", "sort": 0, "parent_id": "doc1"},
-                    {"id": "p1", "content": "Paragraph", "type": "p", "sort": 1, "parent_id": "doc1"},
-                ]
-            else:
-                return []
-        elif endpoint == "/api/block/getBlockInfo":
-            return {"content": "My Document", "type": "d"}
-        return None
-
-    mock_sy.call = mock_call
-    result = await get_block_children(id="doc1", depth=2)
-    assert result.id == "doc1"
-    assert result.type == "d"
-    assert len(result.children) == 2
-    assert result.children[0]["content"] == "Heading 1"
-    # With batch queries: 1 query for depth 1, 1 for depth 2 (h1+p1 children),
-    # 1 for getBlockInfo = 3 total, NOT 1+N+1
-    assert call_count == 3
 
 
 @pytest.mark.asyncio
@@ -516,3 +484,43 @@ async def test_sanitize_rejects_sql_injection():
     # Clean values should pass through
     assert _sanitize("normal-notebook-id") == "normal-notebook-id"
     assert _sanitize("20260320152120-abc123") == "20260320152120-abc123"
+
+
+@pytest.mark.asyncio
+async def test_get_block_children_real_content_in_document_order(mock_sy):
+    """Root carries real type/content (getBlockInfo has neither) and children
+    come in document order from the kernel child list, not by ``sort`` (a
+    block-type weight). Headings are leaves here: their section blocks are
+    already siblings, so recursing would list them twice."""
+    from mcp_siyuan.tools.smart import get_block_children
+
+    kids = {
+        "doc1": [
+            {"id": "p0", "type": "p", "content": "Intro"},
+            {"id": "h1", "type": "h", "subType": "h2", "content": "Heading"},
+            {"id": "l1", "type": "l", "subType": "u", "content": ""},
+        ],
+        "l1": [{"id": "i1", "type": "i", "content": "", "markdown": "- item"}],
+        "h1": [{"id": "l1", "type": "l"}],
+    }
+
+    async def mock_call(endpoint, **kwargs):
+        if endpoint == "/api/query/sql":
+            return [{"id": "doc1", "type": "d", "content": "My Document", "parent_id": ""}]
+        if endpoint == "/api/block/getBlockKramdown":
+            return {"id": "doc1", "kramdown": "My Document"}
+        if endpoint == "/api/block/getChildBlocks":
+            return kids.get(kwargs["id"], [])
+        if endpoint == "/api/block/getBlockInfo":
+            return {"rootID": "doc1", "box": "nb"}  # no type, no content
+        raise AssertionError(endpoint)
+
+    mock_sy.call = mock_call
+    result = await get_block_children(id="doc1", depth=3)
+    assert (result.type, result.content) == ("d", "My Document")
+    assert [c["id"] for c in result.children] == ["p0", "h1", "l1"]
+    assert [c["sort"] for c in result.children] == [0, 1, 2]
+    assert result.children[0]["content"] == "Intro"
+    assert result.children[1]["children"] == []
+    item = result.children[2]["children"][0]
+    assert (item["id"], item["content"], item["parent_id"]) == ("i1", "- item", "l1")

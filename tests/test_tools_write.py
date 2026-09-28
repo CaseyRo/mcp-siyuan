@@ -104,7 +104,7 @@ async def test_update_block(mock_sy):
     mock_sy.call.return_value = [{"doOperations": [{"action": "update"}]}]
     result = await update_block(id="b1", data="updated text")
     assert result.ok is True
-    assert result.transactions == [{"doOperations": [{"action": "update"}]}]
+    assert result.id == "b1"
     mock_sy.call.assert_called_once_with(
         "/api/block/updateBlock",
         id="b1",
@@ -1061,3 +1061,94 @@ async def test_delete_doc_require_empty_refuses_nonempty(mock_sy):
     mock_sy.call = mock_call
     with pytest.raises(ValueError, match="still has"):
         await delete_doc(id="doc1", require_empty=True)
+
+
+_DOM_ECHO = [{"doOperations": [{"action": "update", "id": "b1", "data": "<div>" + "x" * 4000 + "</div>"}]}]
+
+
+@pytest.mark.asyncio
+async def test_update_block_returns_ids_not_transactions(mock_sy):
+    """The kernel's DOM echo (~4 KB) never reaches the client."""
+    from mcp_siyuan.tools.write import update_block
+
+    mock_sy.call.return_value = _DOM_ECHO
+    dumped = (await update_block(id="b1", data="text")).model_dump()
+    assert "transactions" not in dumped
+    assert dumped["id"] == "b1"
+
+
+@pytest.mark.asyncio
+async def test_insert_and_append_return_new_id_not_transactions(mock_sy):
+    from mcp_siyuan.tools.write import append_block, insert_block
+
+    mock_sy.call.return_value = [
+        {"doOperations": [{"action": "insert", "id": "new1", "data": "<div/>"}]}
+    ]
+    for result in (
+        await insert_block(data="p", anchor_id="b1"),
+        await append_block(parent_id="doc1", data="p"),
+    ):
+        assert result.id == "new1"
+        assert "transactions" not in result.model_dump()
+
+
+def _list_item_mock(calls, dom='<div data-marker="*" data-type="NodeListItem" class="li">'):
+    counter = iter(range(1, 100))
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/block/getBlockDOM":
+            if dom is None:
+                from mcp_siyuan.client import SiYuanError
+
+                raise SiYuanError("boom", -1)
+            return {"id": kwargs["id"], "dom": dom + "<div data-type=\"NodeParagraph\">"}
+        if endpoint == "/api/block/insertBlock":
+            return [{"doOperations": [{"action": "insert", "id": f"li{next(counter)}"}]}]
+        return [{"doOperations": [{"action": "update", "id": kwargs.get("id")}]}]
+
+    return mock_call
+
+
+@pytest.mark.asyncio
+async def test_update_list_item_with_multi_item_list_keeps_every_item(mock_sy):
+    """A multi-item list sent to one list item: the item takes the first entry,
+    the rest land after it as sibling items (the kernel keeps only the first)."""
+    from mcp_siyuan.tools.write import update_block
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _list_item_mock(calls)
+    result = await update_block(id="i1", data="- one\n- two\n  - nested\n- three")
+
+    update = [c[1] for c in calls if c[0] == "/api/block/updateBlock"]
+    inserts = [c[1] for c in calls if c[0] == "/api/block/insertBlock"]
+    assert update == [{"id": "i1", "data": "- one", "dataType": "markdown"}]
+    assert [c["data"] for c in inserts] == ["- two\n  - nested", "- three"]
+    assert [c["previousID"] for c in inserts] == ["i1", "li1"]
+    assert result.inserted_ids == ["li1", "li2"]
+
+
+@pytest.mark.asyncio
+async def test_update_list_block_with_multi_item_list_passes_through(mock_sy):
+    """A list block (not an item) takes the whole list in one update."""
+    from mcp_siyuan.tools.write import update_block
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _list_item_mock(calls, dom='<div data-type="NodeList" class="list">')
+    await update_block(id="l1", data="- one\n- two")
+    assert [c[0] for c in calls] == ["/api/block/getBlockDOM", "/api/block/updateBlock"]
+    assert calls[1][1]["data"] == "- one\n- two"
+
+
+@pytest.mark.asyncio
+async def test_update_multi_item_list_raises_when_type_unknown(mock_sy):
+    """Can't tell whether the target is a list item: refuse rather than truncate."""
+    from fastmcp.exceptions import ToolError
+
+    from mcp_siyuan.tools.write import update_block
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _list_item_mock(calls, dom=None)
+    with pytest.raises(ToolError, match="parent list"):
+        await update_block(id="i1", data="- one\n- two")
+    assert not [c for c in calls if c[0] == "/api/block/updateBlock"]
