@@ -442,22 +442,37 @@ async def get_document_outline(
 ) -> list[OutlineHeading]:
     """[notes] Get the heading outline of a document.
 
-    Returns only heading blocks in order — useful for understanding document
-    structure without fetching the full content or making N+1 queries.
+    Returns only heading blocks in document order (``sort`` is the position)
+    — useful for understanding document structure without fetching the full
+    content or making N+1 queries.
 
     Args:
         id: The document block ID.
         limit: Max headings to return (default 100, max 200).
     """
     safe_id = _sanitize(id)
+    # blocks.sort is a block-type weight (every heading is 5), not document
+    # order. The kernel's child list is the document order, and it is current
+    # even when the SQL index lags.
+    kids = await sy.call("/api/block/getChildBlocks", id=safe_id)
+    ordered: list[dict[str, Any]] = [
+        {"id": k.get("id", ""), "content": k.get("content", ""), "level": k.get("subType", "")}
+        for k in (kids if isinstance(kids, list) else [])
+        if k.get("type") == "h"
+    ]
+    # ponytail: headings nested inside containers (blockquote, superblock) are
+    # not direct children; they come from the index and go last. Walk
+    # container children if their position ever matters.
+    seen = {h["id"] for h in ordered}
     stmt = (
-        f"SELECT id, content, subtype AS level, sort "
-        f"FROM blocks WHERE root_id = '{safe_id}' AND type = 'h' "
-        f"ORDER BY sort ASC LIMIT {limit}"
+        f"SELECT id, content, subtype AS level "
+        f"FROM blocks WHERE root_id = '{safe_id}' AND type = 'h' LIMIT 200"
     )
     data = await sy.call("/api/query/sql", stmt=stmt)
-    rows = data if isinstance(data, list) else []
-    return [OutlineHeading(**row) for row in rows]
+    ordered += [r for r in (data if isinstance(data, list) else []) if r.get("id") not in seen]
+    return [
+        OutlineHeading(**{**h, "sort": i}) for i, h in enumerate(ordered[:limit])
+    ]
 
 
 # Substrings SiYuan appends to a doc's path/hpath when a sync produces a

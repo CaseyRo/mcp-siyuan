@@ -356,20 +356,35 @@ async def test_capture_task_with_notebook(mock_sy):
 
 @pytest.mark.asyncio
 async def test_get_document_outline(mock_sy):
-    """get_document_outline returns headings only."""
+    """Headings come back in document order, not blocks.sort order.
+
+    Real index rows all carry sort=5 for headings, so SQL order is arbitrary;
+    here the index returns them scrambled and the kernel child list is the
+    truth. A heading nested in a blockquote (not a direct child) is kept.
+    """
     from mcp_siyuan.tools.smart import get_document_outline
 
-    mock_sy.call.return_value = [
-        {"id": "h1", "content": "Introduction", "level": "h1", "sort": 0},
-        {"id": "h2", "content": "Methods", "level": "h2", "sort": 10},
-        {"id": "h3", "content": "Results", "level": "h2", "sort": 20},
+    kernel = [
+        {"id": "h1", "type": "h", "subType": "h1", "content": "Introduction"},
+        {"id": "p1", "type": "p", "content": "text"},
+        {"id": "h2", "type": "h", "subType": "h2", "content": "Methods"},
+        {"id": "h3", "type": "h", "subType": "h2", "content": "Results"},
     ]
+    index = [
+        {"id": "h3", "content": "Results", "level": "h2"},
+        {"id": "hq", "content": "Quoted", "level": "h3"},
+        {"id": "h1", "content": "Introduction", "level": "h1"},
+        {"id": "h2", "content": "Methods", "level": "h2"},
+    ]
+
+    async def mock_call(endpoint, **kwargs):
+        return kernel if endpoint == "/api/block/getChildBlocks" else index
+
+    mock_sy.call = mock_call
     result = await get_document_outline(id="doc1")
-    assert len(result) == 3
-    assert result[0].content == "Introduction"
+    assert [h.content for h in result] == ["Introduction", "Methods", "Results", "Quoted"]
+    assert [h.sort for h in result] == [0, 1, 2, 3]
     assert result[0].level == "h1"
-    stmt = mock_sy.call.call_args.kwargs["stmt"]
-    assert "type = 'h'" in stmt
 
 
 @pytest.mark.asyncio
