@@ -205,13 +205,14 @@ async def test_get_block_not_indexed_yet(mock_sy):
 
 @pytest.mark.asyncio
 async def test_get_block_not_found(mock_sy):
-    """get_block returns error when neither index nor kernel know the block."""
+    """get_block raises ToolError when neither index nor kernel know the block."""
+    from fastmcp.exceptions import ToolError
+
     from mcp_siyuan.tools.read import get_block
 
     mock_sy.call = _block_mock([], "")
-    result = await get_block(id="nonexistent")
-    assert result.error is not None
-    assert "not found" in result.error
+    with pytest.raises(ToolError, match="not found"):
+        await get_block(id="nonexistent")
 
 
 @pytest.mark.asyncio

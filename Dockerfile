@@ -17,9 +17,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# ca-certificates: httpx2 uses the OS trust store (fastmcp 4)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
-    libffi8 libcairo2 fonts-noto \
+    libffi8 libcairo2 fonts-noto ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && addgroup --system mcp && adduser --system --ingroup mcp mcp
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Annotated, Any
 
+from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from mcp_siyuan.client import sy
@@ -124,7 +125,7 @@ async def get_block(id: str) -> BlockInfo:
     from mcp_siyuan.client import SiYuanError
 
     if any(c in id for c in ("'", '"', ";", "\n")):
-        return BlockInfo(error=f"Block {id} not found")
+        raise ToolError(f"Block {id} not found")
     rows = await sy.call(
         "/api/query/sql",
         stmt=f"SELECT {', '.join(_BLOCK_FIELDS)}, markdown FROM blocks "
@@ -137,7 +138,7 @@ async def get_block(id: str) -> BlockInfo:
         kd = None
     markdown = _IAL_RE.sub("", (kd or {}).get("kramdown") or "").strip()
     if not row and not markdown:
-        return BlockInfo(error=f"Block {id} not found")
+        raise ToolError(f"Block {id} not found")
 
     fields: dict[str, Any] = {k: row.get(k) or "" for k in _BLOCK_FIELDS}
     if not row:

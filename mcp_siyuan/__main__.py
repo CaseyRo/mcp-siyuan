@@ -2,4 +2,5 @@
 
 from mcp_siyuan.server import main
 
-main()
+if __name__ == "__main__":  # importing this module must not start the stdio server
+    main()

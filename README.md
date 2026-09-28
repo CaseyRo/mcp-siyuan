@@ -261,7 +261,7 @@ Once you have a `request_id` from a failure, the next investigation steps live o
 
 ### FastMCP version pin
 
-`fastmcp` is constrained to `>=3.4.2,<4.0.0` in `pyproject.toml`. The previous `==3.2.4` RCA pin (No-approval-received investigation) has been lifted; 3.4.2 adds the annotation / structured-output / resource ergonomics this server now relies on. The startup banner logs `fastmcp_version`; if the installed **major** ever drifts outside the range, the server emits an `ERROR` log line but does not crash. Do not bump across the `<4.0.0` ceiling without coordinating with the team.
+`fastmcp` is constrained to `>=4.0.10,<5.0.0` in `pyproject.toml`; `uv.lock` pins the exact version and the Docker build installs it with `uv sync --frozen`. CI runs with `FASTMCP_MCP_CAMELCASE_COMPAT=false`, so MCP fields are read and written in snake_case (`read_only_hint`, `mime_type`).
 
 ---
 

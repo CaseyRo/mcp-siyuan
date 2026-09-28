@@ -27,28 +27,6 @@ from mcp_siyuan.models import (
 logger = logging.getLogger(__name__)
 
 
-async def _ctx_info(ctx: Context | None, message: str) -> None:
-    """Best-effort ctx.info — never let observability break a tool call."""
-    if ctx is None:
-        return
-    try:
-        await ctx.info(message)
-    except Exception:  # pragma: no cover - defensive
-        logger.debug("ctx.info failed", exc_info=True)
-
-
-async def _ctx_progress(
-    ctx: Context | None, progress: float, total: float, message: str | None = None
-) -> None:
-    """Best-effort ctx.report_progress — never let it break a tool call."""
-    if ctx is None:
-        return
-    try:
-        await ctx.report_progress(progress=progress, total=total, message=message)
-    except Exception:  # pragma: no cover - defensive
-        logger.debug("ctx.report_progress failed", exc_info=True)
-
-
 _ELICIT_TIMEOUT_S = 5.0
 
 
@@ -63,7 +41,7 @@ async def _confirm_destructive(ctx: Context | None, message: str) -> bool:
     NOT support it. The contract:
 
     * No ``ctx`` available (e.g. unit tests, stdio without a session) → proceed.
-      The ``destructiveHint`` annotation already warns the client.
+      The ``destructive_hint`` annotation already warns the client.
     * ``ctx.elicit`` raises because the client can't elicit (capability missing,
       transport error, deprecation guard, etc.) or gives no answer within
       ``_ELICIT_TIMEOUT_S`` → proceed. We must
@@ -90,7 +68,7 @@ async def _confirm_destructive(ctx: Context | None, message: str) -> bool:
     except Exception:
         # Client does not support elicitation, it failed in transit, or it
         # timed out.
-        # Degrade gracefully: proceed, relying on the destructiveHint warning.
+        # Degrade gracefully: proceed, relying on the destructive_hint warning.
         logger.info(
             "elicitation unavailable; proceeding with destructive op without "
             "interactive confirmation",
@@ -1036,7 +1014,6 @@ _BULK_MAX = 50
 
 async def bulk_create_documents(
     documents: list[dict[str, Any]],
-    ctx: Context | None = None,
 ) -> list[BulkDocResult]:
     """[notes] Create multiple documents in one call.
 
@@ -1063,10 +1040,8 @@ async def bulk_create_documents(
 
     from mcp_siyuan.client import SiYuanError
 
-    total = len(documents)
-    await _ctx_info(ctx, f"Creating {total} document(s)")
     results: list[BulkDocResult] = []
-    for idx, item in enumerate(documents, start=1):
+    for item in documents:
         notebook = item.get("notebook", "")
         path = item.get("path", "")
         markdown = item.get("markdown", "")
@@ -1077,7 +1052,6 @@ async def bulk_create_documents(
                 status="error",
                 error="notebook and path are required",
             ))
-            await _ctx_progress(ctx, idx, total, path)
             continue
         try:
             data = await sy.call(
@@ -1100,13 +1074,11 @@ async def bulk_create_documents(
                 status="error",
                 error=str(exc),
             ))
-        await _ctx_progress(ctx, idx, total, path)
     return results
 
 
 async def bulk_set_attrs(
     items: list[dict[str, Any]],
-    ctx: Context | None = None,
 ) -> list[BulkAttrResult]:
     """[notes] Set attributes on multiple blocks in one call.
 
@@ -1129,10 +1101,8 @@ async def bulk_set_attrs(
 
     from mcp_siyuan.client import SiYuanError
 
-    total = len(items)
-    await _ctx_info(ctx, f"Setting attributes on {total} block(s)")
     results: list[BulkAttrResult] = []
-    for idx, entry in enumerate(items, start=1):
+    for entry in items:
         block_id = entry.get("block_id", "")
         attrs = entry.get("attrs", {})
         if not block_id or not isinstance(attrs, dict):
@@ -1141,7 +1111,6 @@ async def bulk_set_attrs(
                 status="error",
                 error="block_id and attrs (dict) are required",
             ))
-            await _ctx_progress(ctx, idx, total, block_id)
             continue
         try:
             await sy.call(
@@ -1160,7 +1129,6 @@ async def bulk_set_attrs(
                 status="error",
                 error=str(exc),
             ))
-        await _ctx_progress(ctx, idx, total, block_id)
     return results
 
 

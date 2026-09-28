@@ -489,13 +489,14 @@ async def test_get_doc_summary(mock_sy):
 
 @pytest.mark.asyncio
 async def test_get_doc_summary_not_found(mock_sy):
-    """get_doc_summary returns an error payload when the doc is missing (CDI-1093)."""
+    """get_doc_summary raises ToolError when the doc is missing (CDI-1093)."""
+    from fastmcp.exceptions import ToolError
+
     from mcp_siyuan.tools.smart import get_doc_summary
 
     mock_sy.call.return_value = []
-    result = await get_doc_summary(id="nope")
-    assert result.error is not None
-    assert result.child_count == 0
+    with pytest.raises(ToolError, match="not found"):
+        await get_doc_summary(id="nope")
 
 
 @pytest.mark.asyncio

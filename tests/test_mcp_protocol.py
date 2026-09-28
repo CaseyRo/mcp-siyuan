@@ -21,11 +21,6 @@ EXPECTED_TOOLS = {
 }
 
 
-def _hint(annotations, snake: str, camel: str):
-    # fastmcp 3 exposes camelCase, 4 snake_case; read whichever exists.
-    return getattr(annotations, snake, getattr(annotations, camel, None))
-
-
 @pytest.mark.asyncio
 async def test_server_registers_its_tools():
     async with Client(mcp) as client:
@@ -39,8 +34,27 @@ async def test_read_only_annotations_survive_the_wire():
         tools = {t.name: t for t in await client.list_tools()}
     ann = tools["list_notebooks"].annotations
     assert ann is not None
-    assert _hint(ann, "read_only_hint", "readOnlyHint") is True
-    assert _hint(tools["delete_block"].annotations, "destructive_hint", "destructiveHint") is True
+    assert ann.read_only_hint is True
+    assert tools["delete_block"].annotations.destructive_hint is True
+
+
+@pytest.mark.asyncio
+async def test_c3_fields_survive_in_output_schemas():
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+    assert "inserted_ids" in tools["update_block"].output_schema["properties"]
+    assert "markdown" in tools["get_block"].output_schema["properties"]
+
+
+@pytest.mark.asyncio
+async def test_delete_proceeds_when_client_cannot_elicit():
+    """No elicitation handler on the client: ctx.elicit fails fast, delete proceeds."""
+    with patch("mcp_siyuan.tools.write.sy") as sy:
+        sy.call = AsyncMock(return_value=[{"doOperations": [{"action": "delete"}]}])
+        async with Client(mcp) as client:
+            result = await client.call_tool("delete_block", {"id": "20210808180320-fqgskfj"})
+    sy.call.assert_awaited_once_with("/api/block/deleteBlock", id="20210808180320-fqgskfj")
+    assert result.structured_content["ok"] is True
 
 
 @pytest.mark.asyncio
