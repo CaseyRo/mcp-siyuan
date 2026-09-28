@@ -106,30 +106,50 @@ async def search(
 
 
 _BLOCK_FIELDS = ("id", "type", "content", "parent_id", "root_id", "box", "hpath", "updated")
+# Kramdown inline attribute lists, e.g. {: id="2026..." updated="2026..."}
+_IAL_RE = re.compile(r'\{: (?:[\w-]+="[^"]*"\s*)+\}')
 
 
 async def get_block(id: str) -> BlockInfo:
     """[notes] Get a single block's content and metadata by ID.
 
-    Returns block content and metadata (id, type, content, parent_id). For custom
-    attributes (memo, alias, bookmark, etc.), use get_block_attrs instead.
-
-    Returns only the essential fields: id, type, content, parent_id,
-    root_id, box, hpath, updated.
+    Returns id, type, content (plain text), markdown, parent_id, root_id, box,
+    hpath and updated. Content comes from the kernel, so it is current even
+    when the SQL index lags. For custom attributes (memo, alias, bookmark,
+    etc.), use get_block_attrs instead.
 
     Args:
         id: The block ID to retrieve.
     """
-    data = await sy.call("/api/block/getBlockInfo", id=id)
-    if not data:
+    from mcp_siyuan.client import SiYuanError
+
+    if any(c in id for c in ("'", '"', ";", "\n")):
         return BlockInfo(error=f"Block {id} not found")
-    # Normalise field names and project only useful fields
-    normalised: dict[str, Any] = {}
-    for key in _BLOCK_FIELDS:
-        # SiYuan uses camelCase for some fields in this endpoint
-        camel = {"parent_id": "parentID", "root_id": "rootID", "hpath": "hPath"}.get(key, key)
-        normalised[key] = data.get(key) or data.get(camel, "")
-    return BlockInfo(**normalised)
+    rows = await sy.call(
+        "/api/query/sql",
+        stmt=f"SELECT {', '.join(_BLOCK_FIELDS)}, markdown FROM blocks "
+        f"WHERE id = '{id}' LIMIT 1",
+    )
+    row = rows[0] if isinstance(rows, list) and rows else {}
+    try:
+        kd = await sy.call("/api/block/getBlockKramdown", id=id)
+    except SiYuanError:
+        kd = None
+    markdown = _IAL_RE.sub("", (kd or {}).get("kramdown") or "").strip()
+    if not row and not markdown:
+        return BlockInfo(error=f"Block {id} not found")
+
+    fields: dict[str, Any] = {k: row.get(k) or "" for k in _BLOCK_FIELDS}
+    if not row:
+        # Not indexed yet: take what the kernel knows. parent/type stay empty.
+        try:
+            info = await sy.call("/api/block/getBlockInfo", id=id) or {}
+        except SiYuanError:
+            info = {}
+        fields.update(id=id, root_id=info.get("rootID", ""), box=info.get("box", ""))
+    fields["markdown"] = markdown or row.get("markdown") or ""
+    fields["content"] = fields["content"] or fields["markdown"]
+    return BlockInfo(**fields)
 
 
 async def get_block_attrs(id: str) -> dict[str, str]:

@@ -110,6 +110,7 @@ class BlockInfo(BaseModel):
     id: str = ""
     type: str = ""
     content: str = ""
+    markdown: str = ""
     parent_id: str = ""
     root_id: str = ""
     box: str = ""
@@ -264,6 +265,9 @@ class WriteResult(BaseModel):
     # Surfaced on write failures so callers know an identical retry is safe
     # (the HTTP client sets SiYuanError.retryable for 5xx/transport faults).
     retryable: bool | None = None
+    # update_block: ids of the blocks inserted after the target when the
+    # markdown held more than one block.
+    inserted_ids: list[str] | None = None
 
 
 class DeleteBlockResult(BaseModel):
