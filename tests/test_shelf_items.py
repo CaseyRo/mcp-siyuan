@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
+import anyio
 import pytest
 
 
@@ -135,6 +136,33 @@ async def test_confirm_destructive_unsupported_proceeds():
     ctx = _UnsupportedCtx()
     assert await _confirm_destructive(ctx, "msg") is True
     assert ctx.calls == ["msg"]  # it tried, then degraded
+
+
+class _HangingCtx:
+    """Context whose elicit() never resolves (portal handshake-era hang)."""
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def elicit(self, message: str, response_type=None, **kw):
+        self.calls.append(message)
+        await anyio.sleep_forever()
+
+
+@pytest.mark.asyncio
+async def test_delete_block_hanging_elicit_times_out_and_deletes(
+    mock_write_sy, monkeypatch
+):
+    """CDI-1551: an elicit that never answers must not hang the delete."""
+    from mcp_siyuan.tools import write
+    from mcp_siyuan.tools.write import delete_block
+
+    monkeypatch.setattr(write, "_ELICIT_TIMEOUT_S", 0.05, raising=False)
+    mock_write_sy.call.return_value = [{"doOperations": [{"action": "delete"}]}]
+    with anyio.fail_after(2):  # guard: without the fix this would hang
+        result = await delete_block(id="b1", ctx=_HangingCtx())
+    assert result.ok is True
+    mock_write_sy.call.assert_called_once_with("/api/block/deleteBlock", id="b1")
 
 
 # ---------------------------------------------------------------------------

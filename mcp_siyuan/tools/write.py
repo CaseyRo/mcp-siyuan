@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any, Literal
 
+import anyio
+
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
 from markdown_it import MarkdownIt
@@ -47,6 +49,9 @@ async def _ctx_progress(
         logger.debug("ctx.report_progress failed", exc_info=True)
 
 
+_ELICIT_TIMEOUT_S = 5.0
+
+
 async def _confirm_destructive(ctx: Context | None, message: str) -> bool:
     """Best-effort confirmation gate before a destructive operation.
 
@@ -60,7 +65,8 @@ async def _confirm_destructive(ctx: Context | None, message: str) -> bool:
     * No ``ctx`` available (e.g. unit tests, stdio without a session) → proceed.
       The ``destructiveHint`` annotation already warns the client.
     * ``ctx.elicit`` raises because the client can't elicit (capability missing,
-      transport error, timeout, deprecation guard, etc.) → proceed. We must
+      transport error, deprecation guard, etc.) or gives no answer within
+      ``_ELICIT_TIMEOUT_S`` → proceed. We must
       NEVER let an unsupported confirmation break an otherwise-valid delete.
     * Elicitation succeeds and the user ACCEPTS → proceed.
     * Elicitation succeeds and the user DECLINES or CANCELS → abort gracefully
@@ -78,9 +84,12 @@ async def _confirm_destructive(ctx: Context | None, message: str) -> bool:
         return True
 
     try:
-        result = await elicit(message=message, response_type=bool)
+        # CDI-1551: through the portal an elicit can hang forever; bound it.
+        with anyio.fail_after(_ELICIT_TIMEOUT_S):
+            result = await elicit(message=message, response_type=bool)
     except Exception:
-        # Client does not support elicitation (or it failed in transit).
+        # Client does not support elicitation, it failed in transit, or it
+        # timed out.
         # Degrade gracefully: proceed, relying on the destructiveHint warning.
         logger.info(
             "elicitation unavailable; proceeding with destructive op without "
