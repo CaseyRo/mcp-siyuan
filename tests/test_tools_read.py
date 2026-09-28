@@ -152,32 +152,63 @@ async def test_search_empty(mock_sy):
     assert result == []
 
 
+def _block_mock(sql_rows, kramdown, info=None):
+    """Kernel stub. Real getBlockInfo returns only root/box/path metadata —
+    no type, content or parent (CDI-1550) — so the mock does the same."""
+
+    async def mock_call(endpoint, **kwargs):
+        if endpoint == "/api/query/sql":
+            return sql_rows
+        if endpoint == "/api/block/getBlockKramdown":
+            return {"id": kwargs["id"], "kramdown": kramdown}
+        if endpoint == "/api/block/getBlockInfo":
+            return info or {"rootID": "r1", "box": "nb1", "path": "/r1.sy", "rootTitle": "T"}
+        raise AssertionError(endpoint)
+
+    return mock_call
+
+
 @pytest.mark.asyncio
 async def test_get_block(mock_sy):
-    """get_block returns shaped block data with only essential fields."""
+    """get_block returns type, content, markdown, parent and root (CDI-1550)."""
     from mcp_siyuan.tools.read import get_block
 
-    mock_sy.call.return_value = {
-        "id": "b1", "type": "p", "content": "hello",
-        "parentID": "doc1", "rootID": "r1", "box": "nb1",
-        "hPath": "/notes", "updated": "20260320",
-        "internalField": "should be dropped",
-    }
+    mock_sy.call = _block_mock(
+        [{"id": "b1", "type": "p", "content": "hello", "parent_id": "doc1",
+          "root_id": "r1", "box": "nb1", "hpath": "/notes", "updated": "20260320",
+          "markdown": "hello"}],
+        'hello **now**\n{: id="b1" updated="20260321"}',
+    )
     result = await get_block(id="b1")
+    assert result.error is None
     assert result.type == "p"
+    assert result.content == "hello"
+    assert result.markdown == "hello **now**"  # kernel wins over the index
     assert result.parent_id == "doc1"
     assert result.root_id == "r1"
     assert result.hpath == "/notes"
-    # Only the projected fields are kept — internal kernel keys are dropped.
-    assert "internalField" not in result.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_get_block_not_indexed_yet(mock_sy):
+    """Fresh block missing from the SQL index still returns kernel content."""
+    from mcp_siyuan.tools.read import get_block
+
+    mock_sy.call = _block_mock([], 'fresh text\n{: id="b2"}')
+    result = await get_block(id="b2")
+    assert result.id == "b2"
+    assert result.markdown == "fresh text"
+    assert result.content == "fresh text"
+    assert result.root_id == "r1"
+    assert result.box == "nb1"
 
 
 @pytest.mark.asyncio
 async def test_get_block_not_found(mock_sy):
-    """get_block returns error dict when block doesn't exist."""
+    """get_block returns error when neither index nor kernel know the block."""
     from mcp_siyuan.tools.read import get_block
 
-    mock_sy.call.return_value = None
+    mock_sy.call = _block_mock([], "")
     result = await get_block(id="nonexistent")
     assert result.error is not None
     assert "not found" in result.error

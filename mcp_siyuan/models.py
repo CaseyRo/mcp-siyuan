@@ -110,6 +110,7 @@ class BlockInfo(BaseModel):
     id: str = ""
     type: str = ""
     content: str = ""
+    markdown: str = ""
     parent_id: str = ""
     root_id: str = ""
     box: str = ""
