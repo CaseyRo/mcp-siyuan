@@ -89,15 +89,16 @@ def _wrap_result(result: Any) -> WriteResult:
     """Normalise SiYuan write responses to a typed ``WriteResult``.
 
     SiYuan returns either a dict (kernel object), a list (transaction array), or
-    nothing on a write. We preserve the historical wire shape exactly:
+    nothing on a write:
       * dict  → its keys are passed through verbatim (``extra="allow"``),
-      * list  → ``{"ok": True, "transactions": [...]}``,
+      * list  → ``{"ok": True, "id": <block the write touched>}``; the
+        transaction echo itself is ~4 KB of DOM the client never needs,
       * other → ``{"ok": True}``.
     """
     if isinstance(result, dict):
         return WriteResult(**result)
     if isinstance(result, list):
-        return WriteResult(ok=True, transactions=result)
+        return WriteResult(ok=True, id=_op_id(result))
     return WriteResult(ok=True)
 
 
@@ -222,13 +223,44 @@ def _split_blocks(markdown: str) -> list[str]:
     ]
 
 
-def _inserted_id(result: Any) -> str | None:
-    """The new block id from an insertBlock transaction echo."""
+def _op_id(result: Any) -> str | None:
+    """The block id of the first operation in a kernel transaction echo."""
     for tx in result if isinstance(result, list) else []:
         for op in (tx or {}).get("doOperations") or []:
-            if op.get("action") == "insert" and op.get("id"):
+            if op.get("id"):
                 return op["id"]
     return None
+
+
+def _list_items(block: str) -> list[str]:
+    """Split one markdown list block into its item sources (nesting kept)."""
+    lines = block.split("\n")
+    starts = [
+        t.map[0]
+        for t in _md.parse(block)
+        if t.type == "list_item_open" and t.level == 1 and t.map
+    ]
+    ends = starts[1:] + [len(lines)]
+    return ["\n".join(lines[a:b]).strip("\n") for a, b in zip(starts, ends)]
+
+
+async def _is_list_item(id: str) -> bool:
+    """Whether ``id`` is a list item, from the kernel DOM (current even when
+    the SQL index lags). Raises ToolError when the kernel can't say."""
+    from mcp_siyuan.client import SiYuanError
+
+    try:
+        res = await sy.call("/api/block/getBlockDOM", id=id)
+    except SiYuanError:
+        res = None
+    dom = (res or {}).get("dom") if isinstance(res, dict) else None
+    if not dom:
+        raise ToolError(
+            f"update_block: can't tell whether {id} is a list item, and a "
+            "multi-item list sent to a single list item keeps only the first "
+            "item. Update the parent list block instead."
+        )
+    return 'data-type="NodeListItem"' in dom.split(">", 1)[0]
 
 
 async def update_block(
@@ -241,8 +273,10 @@ async def update_block(
 
     Multi-block markdown (e.g. two paragraphs) sent to a non-document block
     updates the block with the first block and inserts the rest after it, in
-    order; their ids come back in ``inserted_ids``. A document id replaces the
-    whole document body.
+    order; their ids come back in ``inserted_ids``. A multi-item list sent to
+    a single list item works the same way: the item takes the first entry and
+    the rest become sibling items. A document id replaces the whole document
+    body. Returns ``{ok, id, inserted_ids, warnings, error}``.
 
     Args:
         id: The block ID to update.
@@ -253,7 +287,10 @@ async def update_block(
 
     async def _call() -> WriteResult:
         blocks = _split_blocks(data) if data_type == "markdown" else []
-        if len(blocks) > 1:
+        items = _list_items(blocks[0]) if len(blocks) == 1 else []
+        if len(items) > 1 and await _is_list_item(id):
+            blocks = items  # the kernel keeps only the first item otherwise
+        elif len(blocks) > 1:
             info = await sy.call("/api/block/getBlockInfo", id=id)
             if isinstance(info, dict) and info.get("rootID") == id:
                 blocks = []  # document root: the kernel replaces the whole body
@@ -261,12 +298,11 @@ async def update_block(
             result = await sy.call(
                 "/api/block/updateBlock", id=id, data=data, dataType=data_type
             )
-            return _wrap_result(result)
+            return WriteResult(ok=True, id=id) if isinstance(result, list) else _wrap_result(result)
 
-        result = await sy.call(
+        await sy.call(
             "/api/block/updateBlock", id=id, data=blocks[0], dataType="markdown"
         )
-        transactions = list(result) if isinstance(result, list) else []
         inserted: list[str] = []
         previous = id
         for block in blocks[1:]:
@@ -276,7 +312,7 @@ async def update_block(
                 dataType="markdown",
                 previousID=previous,
             )
-            new_id = _inserted_id(res)
+            new_id = _op_id(res)
             if not new_id:
                 raise ToolError(
                     f"update_block: updated {id} and inserted {len(inserted)} of "
@@ -285,9 +321,8 @@ async def update_block(
                     "and append the rest with insert_block."
                 )
             inserted.append(new_id)
-            transactions.extend(res)
             previous = new_id
-        return WriteResult(ok=True, transactions=transactions, inserted_ids=inserted)
+        return WriteResult(ok=True, id=id, inserted_ids=inserted)
 
     return await idempotency_cache.with_idempotency(
         "update_block", idempotency_key, _call
@@ -410,11 +445,7 @@ async def delete_block(
     async def _call() -> DeleteBlockResult:
         try:
             result = await sy.call("/api/block/deleteBlock", id=id)
-            wrapped = _wrap_result(result)
-            return DeleteBlockResult(
-                ok=wrapped.ok,
-                transactions=wrapped.transactions,
-            )
+            return DeleteBlockResult(ok=_wrap_result(result).ok)
         except SiYuanError as exc:
             # SiYuan returns a non-zero code when the block does not exist.
             # Treat this as a successful no-op so deletes are safe to replay.

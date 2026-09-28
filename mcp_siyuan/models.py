@@ -238,15 +238,15 @@ class CaptureTaskResult(BaseModel):
     daily_note_id: str | None = None
     notebook: str | None = None
     task: str | None = None
-    transactions: list[Any] = Field(default_factory=list)
+    # Id of the appended task block (the kernel's DOM echo is not returned).
+    id: str | None = None
     error: str | None = None
 
 
 class WriteResult(BaseModel):
     """Generic write-tool result.
 
-    Covers the normalised ``{"ok": True}`` / ``{"ok": True, "transactions": [...]}``
-    shape returned by ``_wrap_result`` as well as kernel-passthrough dicts (e.g.
+    Covers the normalised ``{"ok": True, "id": ...}`` shape returned by ``_wrap_result`` as well as kernel-passthrough dicts (e.g.
     ``create_notebook`` returns ``{"notebook": {...}}``). ``extra="allow"`` keeps
     every passthrough key; the named fields document the common ones.
 
@@ -259,7 +259,9 @@ class WriteResult(BaseModel):
     model_config = _ALLOW
 
     ok: bool = True
-    transactions: list[Any] = Field(default_factory=list)
+    # The block the write touched: the new block for insert/append, the target
+    # for update. The kernel's transaction echo (~4 KB of DOM) is dropped.
+    id: str | None = None
     warnings: list[str] = Field(default_factory=list)
     error: str | None = None
     # Surfaced on write failures so callers know an identical retry is safe
@@ -277,7 +279,6 @@ class DeleteBlockResult(BaseModel):
 
     ok: bool = True
     already_absent: bool = False
-    transactions: list[Any] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     error: str | None = None
 
