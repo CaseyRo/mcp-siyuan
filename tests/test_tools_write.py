@@ -113,6 +113,71 @@ async def test_update_block(mock_sy):
     )
 
 
+def _update_mock(calls, root_id="doc1"):
+    """Kernel stub: getBlockInfo + updateBlock + insertBlock echoing a new id."""
+    counter = iter(range(1, 100))
+
+    async def mock_call(endpoint, **kwargs):
+        calls.append((endpoint, kwargs))
+        if endpoint == "/api/block/getBlockInfo":
+            return {"rootID": root_id, "box": "nb"}
+        if endpoint == "/api/block/insertBlock":
+            return [{"doOperations": [{"action": "insert", "id": f"new{next(counter)}"}]}]
+        return [{"doOperations": [{"action": "update", "id": kwargs.get("id")}]}]
+
+    return mock_call
+
+
+@pytest.mark.asyncio
+async def test_update_block_multi_block_keeps_every_block(mock_sy):
+    """Multi-block markdown: first block updates the target, the rest are
+    inserted after it in order (SiYuan's updateBlock keeps only the first)."""
+    from mcp_siyuan.tools.write import update_block
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _update_mock(calls)
+    md = "First para.\n\n## A heading\nSecond para.\n\n```py\nx = 1\n\ny = 2\n```\n\n- a\n\n- b"
+    result = await update_block(id="b1", data=md)
+
+    update = [c for c in calls if c[0] == "/api/block/updateBlock"]
+    inserts = [c for c in calls if c[0] == "/api/block/insertBlock"]
+    assert update[0][1]["id"] == "b1"
+    assert update[0][1]["data"] == "First para."
+    assert [c[1]["data"] for c in inserts] == [
+        "## A heading",
+        "Second para.",
+        "```py\nx = 1\n\ny = 2\n```",
+        "- a\n\n- b",
+    ]
+    # Each insert anchors on the block before it, so order is preserved.
+    assert [c[1]["previousID"] for c in inserts] == ["b1", "new1", "new2", "new3"]
+    assert result.inserted_ids == ["new1", "new2", "new3", "new4"]
+
+
+@pytest.mark.asyncio
+async def test_update_block_multi_block_on_document_passes_through(mock_sy):
+    """A document root takes the whole markdown in one updateBlock."""
+    from mcp_siyuan.tools.write import update_block
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _update_mock(calls, root_id="doc1")
+    await update_block(id="doc1", data="one\n\ntwo")
+    assert [c[0] for c in calls] == ["/api/block/getBlockInfo", "/api/block/updateBlock"]
+    assert calls[1][1]["data"] == "one\n\ntwo"
+
+
+@pytest.mark.asyncio
+async def test_update_block_single_block_skips_lookup(mock_sy):
+    """Single-block markdown stays one kernel call."""
+    from mcp_siyuan.tools.write import update_block
+
+    calls: list[tuple[str, dict]] = []
+    mock_sy.call = _update_mock(calls)
+    result = await update_block(id="b1", data="just one\nline wrap")
+    assert [c[0] for c in calls] == ["/api/block/updateBlock"]
+    assert result.inserted_ids is None
+
+
 @pytest.mark.asyncio
 async def test_insert_block_after_new_interface(mock_sy):
     """insert_block with position='after' and anchor_id."""

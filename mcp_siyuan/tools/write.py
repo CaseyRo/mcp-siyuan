@@ -6,6 +6,8 @@ import logging
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
+from fastmcp.exceptions import ToolError
+from markdown_it import MarkdownIt
 from pydantic import Field
 
 from mcp_siyuan.client import sy
@@ -212,6 +214,36 @@ async def create_document(
     )
 
 
+_md = MarkdownIt("commonmark").enable("table")
+
+
+def _split_blocks(markdown: str) -> list[str]:
+    """Split markdown into top-level block sources (CommonMark block boundaries).
+
+    SiYuan's updateBlock keeps only the first block of what it is sent, so a
+    multi-block update has to be spread over one update + N inserts.
+    """
+    lines = markdown.replace("\r\n", "\n").split("\n")
+    starts = [
+        t.map[0]
+        for t in _md.parse(markdown)
+        if t.level == 0 and t.nesting >= 0 and t.map
+    ]
+    ends = starts[1:] + [len(lines)]
+    return [
+        "\n".join(lines[a:b]).strip("\n") for a, b in zip(starts, ends)
+    ]
+
+
+def _inserted_id(result: Any) -> str | None:
+    """The new block id from an insertBlock transaction echo."""
+    for tx in result if isinstance(result, list) else []:
+        for op in (tx or {}).get("doOperations") or []:
+            if op.get("action") == "insert" and op.get("id"):
+                return op["id"]
+    return None
+
+
 async def update_block(
     id: str,
     data: str,
@@ -219,6 +251,11 @@ async def update_block(
     idempotency_key: str | None = None,
 ) -> WriteResult:
     """[notes] Update an existing block's content.
+
+    Multi-block markdown (e.g. two paragraphs) sent to a non-document block
+    updates the block with the first block and inserts the rest after it, in
+    order; their ids come back in ``inserted_ids``. A document id replaces the
+    whole document body.
 
     Args:
         id: The block ID to update.
@@ -228,13 +265,42 @@ async def update_block(
     """
 
     async def _call() -> WriteResult:
+        blocks = _split_blocks(data) if data_type == "markdown" else []
+        if len(blocks) > 1:
+            info = await sy.call("/api/block/getBlockInfo", id=id)
+            if isinstance(info, dict) and info.get("rootID") == id:
+                blocks = []  # document root: the kernel replaces the whole body
+        if len(blocks) <= 1:
+            result = await sy.call(
+                "/api/block/updateBlock", id=id, data=data, dataType=data_type
+            )
+            return _wrap_result(result)
+
         result = await sy.call(
-            "/api/block/updateBlock",
-            id=id,
-            data=data,
-            dataType=data_type,
+            "/api/block/updateBlock", id=id, data=blocks[0], dataType="markdown"
         )
-        return _wrap_result(result)
+        transactions = list(result) if isinstance(result, list) else []
+        inserted: list[str] = []
+        previous = id
+        for block in blocks[1:]:
+            res = await sy.call(
+                "/api/block/insertBlock",
+                data=block,
+                dataType="markdown",
+                previousID=previous,
+            )
+            new_id = _inserted_id(res)
+            if not new_id:
+                raise ToolError(
+                    f"update_block: updated {id} and inserted {len(inserted)} of "
+                    f"{len(blocks) - 1} extra blocks ({inserted}), then the kernel "
+                    "returned no id to anchor the next one. Re-read the document "
+                    "and append the rest with insert_block."
+                )
+            inserted.append(new_id)
+            transactions.extend(res)
+            previous = new_id
+        return WriteResult(ok=True, transactions=transactions, inserted_ids=inserted)
 
     return await idempotency_cache.with_idempotency(
         "update_block", idempotency_key, _call
