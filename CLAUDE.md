@@ -12,11 +12,11 @@ uv run ruff check .      # lint (CI gate)
 
 ## fastmcp 4 idioms
 
-- Fleet conventions (tag-only releases, bearer `MCP_API_KEY` behind the Cloudflare portal, usage telemetry, long-job pattern): `CDiT-infrastructure/docs/wiki/topics/mcp-fleet.md`.
+- Fleet conventions: tag-only releases, bearer `MCP_API_KEY` behind an MCP portal, `usage.py` telemetry, tool failures raise `ToolError`.
 - Tests: the `mcp-testing` skill (in-memory `Client(mcp)`, protocol surface, post-deploy smoke).
 - Release/deploy workflow changes: the `cdit-release-pipeline` skill. Releases are tags; `pyproject.toml`'s version is static and lags them.
-- `main` is protected: branch, PR, the `test` check must pass. A merge to `main` is the deploy (Komodo stack `git-mcp-siyuan-nebula`, build from source).
-- No `ctx.info` / progress events: the portal forwards nothing server-to-client.
+- `main` is protected: branch, PR, the `test` check must pass. A merge to `main` is the deploy (the stack rebuilds from source).
+- No log or progress notifications to the client: the portal forwards nothing server-to-client.
 - `usage.py` is vendored unchanged into every fleet server; do not fork it here.
 
 ## SiYuan gotchas

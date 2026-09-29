@@ -22,6 +22,32 @@ flowchart LR
 
 The stdio path is used directly by local Claude Code; the HTTP path traverses an authenticated edge (e.g. Cloudflare Access) and an MCP portal aggregator.
 
+It is for people who keep their notes in a self-hosted SiYuan workspace and want Claude or another MCP client to read, search and write those notes safely: SQL-backed queries, section-level edits, idempotent writes and PDF export.
+
+## Requirements
+
+- A running SiYuan kernel and its API token (SiYuan: Settings, About, API token)
+- Python 3.11 or newer and [uv](https://docs.astral.sh/uv/) for a local install, or Docker
+- For `export_pdf` outside Docker: the WeasyPrint system libraries (Pango, Cairo)
+
+## Quick start
+
+```bash
+git clone https://github.com/CaseyRo/mcp-siyuan.git
+cd mcp-siyuan
+uv sync
+SIYUAN_URL=http://localhost:6806 SIYUAN_TOKEN=... uv run python -m mcp_siyuan   # stdio
+```
+
+Docker (streamable HTTP on host port 8006, path `/mcp`):
+
+```bash
+cp .env.example .env   # set SIYUAN_TOKEN and MCP_API_KEY
+docker compose up -d --build
+```
+
+`compose.yaml` builds from source and joins an external Docker network named `siyuan-cluster_default` so the server reaches the kernel at `http://siyuan:6806`. Change the network or `SIYUAN_URL` to match your setup.
+
 ---
 
 ## Tool Catalog
@@ -149,12 +175,12 @@ For deeper FastMCP protocol detail, see the [FastMCP docs](https://gofastmcp.com
 
 This repo follows a small set of conventions worth knowing if you're contributing:
 
-- **Tool registration is explicit** in `mcp_siyuan/server.py`: a small `_register(...)` helper wraps each tool function with `traced_tool(...)`, attaches `ToolAnnotations` (read-only / destructive / idempotent / open-world + title) and tags, and hands it to `mcp.tool(...)`. The wrapper preserves `__name__`, `__doc__`, and the full signature (including any injected `ctx: Context`) so FastMCP can introspect the schema.
+- **Tool registration is explicit** in `mcp_siyuan/server.py`: a small `_register(...)` helper wraps each tool function with `traced_tool(...)`, attaches `ToolAnnotations` (read-only / destructive / idempotent / open-world + title) and tags, and hands it to `mcp.tool(...)`. The wrapper preserves `__name__`, `__doc__`, and the full signature so FastMCP can introspect the schema.
 - **Server instructions** (`FastMCP(instructions=...)`) orient clients on the SiYuan sidecar model and the SQL-first query pattern.
-- **No progress events**: tools take no `ctx: Context`. The fastmcp 4 migration removed the `ctx.info` / `ctx.report_progress` calls, since the Cloudflare portal forwards no server-to-client messages.
+- **No progress events**: tools take no `ctx: Context` and send no log or progress notifications, because the MCP portal in front of production forwards no server-to-client messages.
 - **Auth uses a `TokenVerifier`** subclass (`mcp_siyuan/auth.py`). HMAC-compared static bearer (the `MCP_API_KEY`). Required in HTTP mode; the server refuses to start without it.
 - **The `/health` endpoint** is registered with `@mcp.custom_route("/health", methods=["GET"])`. It probes the upstream SiYuan kernel with a 30-second cache (configurable via `UPSTREAM_PROBE_INTERVAL`). Pass `?diag=1` to also dump the recent-tool-call ring buffer (see Operator Runbook).
-- **Error propagation**: tools raise normal exceptions (`SiYuanError`, `ValueError`, etc.). FastMCP catches and converts them to MCP error payloads. The `traced_tool` wrapper appends `[request_id=...]` to the error message so clients can correlate.
+- **Error propagation**: tools raise `ToolError` for caller mistakes and `SiYuanError` for kernel failures. FastMCP converts both into MCP tool errors. The `traced_tool` wrapper appends `[request_id=...]` to the error message so clients can correlate.
 - **Async-first**: every tool function is `async def`. The kernel client (`mcp_siyuan/client.py`) wraps `httpx.AsyncClient`. A single module-level `sy = SiYuanClient()` singleton is reused across calls.
 
 For the underlying framework's tool definition, transport, and middleware mechanics, defer to the FastMCP docs rather than re-documenting them here.
@@ -189,6 +215,10 @@ All configuration is via environment variables. `mcp_siyuan/config.py` parses th
 | `SIYUAN_LOG_LEVEL` | `INFO` | Sets the root log level. JSON formatter emits `ts`, `level`, `request_id`, `tool_name`, `caller`, `args_size_bytes`, `kernel_status`, `latency_ms`, `outcome`, `message`. |
 | `SIYUAN_DIAG_BUFFER_SIZE` | `50` | Number of recent tool-call records held in memory for `/health?diag=1`. |
 | `SIYUAN_IDEMPOTENCY_TTL_SECONDS` | `300` | TTL for the in-process write-tool replay cache. |
+| `SIYUAN_RETRY_MAX_ATTEMPTS` | `3` | Attempts for transient kernel failures (5xx, transport errors). |
+| `SIYUAN_RETRY_INITIAL_BACKOFF` | `0.25` | First retry delay in seconds. |
+| `SIYUAN_RETRY_MAX_BACKOFF` | `2.0` | Upper bound for the retry delay in seconds. |
+| `GIT_COMMIT` | (baked at build) | Commit reported by `/health`; falls back to `/app/.git_commit`. |
 
 ### Where each is set
 
@@ -198,9 +228,15 @@ All configuration is via environment variables. `mcp_siyuan/config.py` parses th
 
 ---
 
+## Authentication
+
+stdio needs no server-side auth: the client that launches the process owns it. In HTTP mode every request to `/mcp` must send `Authorization: Bearer <MCP_API_KEY>`; the key is compared in constant time and the server will not start without one. Terminate TLS in front of the server (reverse proxy, tunnel or an authenticating edge) before exposing it beyond localhost. The server talks to SiYuan with `SIYUAN_TOKEN`; keep both secrets out of version control.
+
+---
+
 ## Deployment
 
-The image builds on every push to `main`. A container orchestrator picks up the new image and rolls it into the stack defined in `compose.yaml`. In our setup:
+The stack rebuilds from source on every merge to `main`, using the `Dockerfile` and `compose.yaml` in this repo. In our setup:
 
 1. Push to `main`.
 2. A git-push webhook triggers a `Dockerfile` build.
@@ -297,6 +333,10 @@ uv run python -m mcp_siyuan
 
 Then expose with `cloudflared tunnel --url http://127.0.0.1:8000` or `tailscale serve` for testing.
 
+### Usage telemetry
+
+A vendored `usage.py` middleware writes one JSON line per tool call to stderr with the server, tool, duration, outcome and protocol. Tool arguments are never logged.
+
 ### Smoke tests
 
 ```bash
@@ -308,19 +348,30 @@ uv run pytest tests/test_idempotency.py -v
 
 # Verify README catalog stays in sync with registered tools
 uv run pytest tests/test_readme_tool_catalog.py
+
+# Lint
+uv run ruff check .
 ```
+
+CI (`.github/workflows/ci.yml`) runs `uv sync --locked`, `ruff check` and `pytest` as the required `test` check. `main` is branch-protected, so every change lands through a pull request.
 
 ---
 
 ## Versioning & Release
 
-Releases are git tags only. Every push to `main` (protected: PR + the `test` check) runs `.github/workflows/release.yml`: tests, `pip-audit`, the next patch tag `vX.Y.Z`, and a GHCR image the stack does not use. Nothing is committed back, so `pyproject.toml`'s version and `CHANGELOG.md` stay static and lag the tags. Production (Komodo stack `git-mcp-siyuan-nebula`) builds from source on each push; `/health` reports the package version plus the `git_commit` baked at build time. Trust the git tags for the release number.
+Releases are git tags only. After a merge to `main`, `.github/workflows/release.yml` runs the tests and `pip-audit`, then pushes the next patch tag `vX.Y.Z` and a multi-arch image to GHCR (published for convenience; the deployment does not pull it). There are no version-bump commits, so `pyproject.toml`'s version and `CHANGELOG.md` stay static and lag the tags. Deployments build from source on each merge; `/health` reports the package version plus the `git_commit` baked at build time. Trust the git tags for the release number.
 
 ---
 
 ## Related work
 
 Cross-references to upstream investigations (No-approval-received RCA, portal caching, server consolidation, portal auth) live in the team's internal tracker, not in this public README.
+
+---
+
+## Support
+
+If this server saves you time, you can [buy me a coffee](https://buymeacoffee.com/caseyberlin).
 
 ---
 

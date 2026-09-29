@@ -18,12 +18,12 @@ The system SHALL provide a `docker-compose.sidecar.yml` that runs mcp-siyuan alo
 - **WHEN** both containers are running via docker-compose
 - **THEN** mcp-siyuan can reach SiYuan's API at `http://siyuan:6806`
 
-### Requirement: Komodo-compatible git deployment
-The system SHALL be deployable via Komodo (`km` CLI) git-push workflow. The repo SHALL contain all necessary Docker configuration for Komodo to build and deploy the stack.
+### Requirement: Git-based deployment
+The system SHALL be deployable by a git-based Docker Compose workflow. The repo SHALL contain all Docker configuration needed to build and deploy the stack from source.
 
 #### Scenario: Git push triggers deploy
 - **WHEN** code is pushed to the repo's main branch
-- **THEN** Komodo picks up the change and rebuilds the sidecar container
+- **THEN** the deploy tooling picks up the change and rebuilds the sidecar container
 
 ### Requirement: Environment variable configuration
 The sidecar SHALL read configuration from environment variables: `SIYUAN_URL`, `SIYUAN_TOKEN`, `TRANSPORT`. The docker-compose file SHALL document these with sensible defaults.
