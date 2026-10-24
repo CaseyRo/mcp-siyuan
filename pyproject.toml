@@ -17,6 +17,7 @@ dependencies = [
     # Security floors (transitive deps of fastmcp; pinned to address CVEs)
     "authlib>=1.7.0",            # GHSA: CSRF in token cache handling
     "python-multipart>=0.0.27",  # GHSA: DoS via unbounded multipart headers
+    "pillow>=13.0.0",            # GHSA: 37 advisories, fixed only in 13.0.0 (via weasyprint)
 ]
 
 [project.scripts]
@@ -37,8 +38,3 @@ dev = [
     "pytest-httpx>=0.34",
     "ruff>=0.8",
 ]
-
-[tool.uv]
-# Pillow (via weasyprint): every advisory on 12.3.0 is fixed only in 13.0.0 (major).
-# Held in 12.x until its own Pillow 13 PR; residual listed in .github/pip-audit-ignore.txt.
-constraint-dependencies = ["pillow>=12.3.0,<13"]
