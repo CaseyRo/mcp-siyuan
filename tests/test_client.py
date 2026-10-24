@@ -14,11 +14,6 @@ def client():
 @pytest.mark.asyncio
 async def test_call_success(client, httpx_mock):
     """Successful API call returns data field."""
-    # Login response
-    httpx_mock.add_response(
-        json={"code": 0, "msg": "", "data": None},
-    )
-    # Actual API call
     httpx_mock.add_response(
         json={"code": 0, "msg": "", "data": {"notebooks": [{"id": "nb1", "name": "Test"}]}},
     )
@@ -29,9 +24,6 @@ async def test_call_success(client, httpx_mock):
 @pytest.mark.asyncio
 async def test_call_error_response(client, httpx_mock):
     """Non-zero code raises SiYuanError with message."""
-    # Login
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})
-    # Error response
     httpx_mock.add_response(
         json={"code": -1, "msg": "block not found", "data": None},
     )
@@ -47,9 +39,6 @@ async def test_call_connection_error(client, httpx_mock, monkeypatch):
 
     monkeypatch.setattr(settings_, "siyuan_retry_max_attempts", 1)
     monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
-    # Login attempt fails
-    httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
-    # Actual call also fails
     httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
     with pytest.raises(SiYuanError, match="Cannot reach SiYuan"):
         await client.call("/api/notebook/lsNotebooks")
@@ -64,8 +53,6 @@ async def test_call_retries_on_502(client, httpx_mock, monkeypatch):
     monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
     monkeypatch.setattr(settings_, "siyuan_retry_max_backoff", 0.0)
 
-    # Login succeeds.
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})
     # First two attempts return 502; third attempt succeeds.
     httpx_mock.add_response(status_code=502, text="bad gateway")
     httpx_mock.add_response(status_code=502, text="bad gateway")
@@ -84,7 +71,6 @@ async def test_call_does_not_retry_on_4xx(client, httpx_mock, monkeypatch):
     monkeypatch.setattr(settings_, "siyuan_retry_max_attempts", 3)
     monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
 
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})  # login
     httpx_mock.add_response(status_code=400, text="bad request")
     with pytest.raises(httpx.HTTPStatusError):
         await client.call("/api/x", foo="bar")
@@ -100,7 +86,6 @@ async def test_call_503_retry_exhaustion_marks_retryable(
     monkeypatch.setattr(settings_, "siyuan_retry_max_attempts", 2)
     monkeypatch.setattr(settings_, "siyuan_retry_initial_backoff", 0.0)
 
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})  # login
     httpx_mock.add_response(status_code=503, text="unavailable")
     httpx_mock.add_response(status_code=503, text="unavailable")
     with pytest.raises(httpx.HTTPStatusError):
@@ -108,31 +93,56 @@ async def test_call_503_retry_exhaustion_marks_retryable(
 
 
 @pytest.mark.asyncio
-async def test_session_login(client, httpx_mock):
-    """Client logs in via session auth on first call."""
-    # Login
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})
-    # API call
+async def test_header_auth_never_logs_in(client, httpx_mock):
+    """Regression: while the Token header works, no loginAuth call is made.
+
+    The old client logged in before every call; SiYuan's brute-force guard then
+    answered "Please enter the captcha" forever (13,932 failed attempts in 4.8 days).
+    """
+    httpx_mock.add_response(json={"code": 0, "msg": "", "data": []})
     httpx_mock.add_response(json={"code": 0, "msg": "", "data": []})
 
+    await client.call("/api/notebook/lsNotebooks")
     await client.call("/api/notebook/lsNotebooks")
 
     requests = httpx_mock.get_requests()
-    assert requests[0].url.path == "/api/system/loginAuth"
-    assert client._session_authed is True
+    assert len(requests) == 2
+    assert all("loginAuth" not in str(r.url) for r in requests)
 
 
 @pytest.mark.asyncio
-async def test_session_login_only_once(client, httpx_mock):
-    """Login is called only once, not on every request."""
-    # Login
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})
-    # Two API calls
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": []})
-    httpx_mock.add_response(json={"code": 0, "msg": "", "data": []})
+async def test_session_login_on_401(client, httpx_mock):
+    """A rejected Token header triggers one session login, then the call is retried."""
+    httpx_mock.add_response(status_code=401, text="unauthorized")
+    httpx_mock.add_response(json={"code": 0, "msg": "", "data": None})  # loginAuth
+    httpx_mock.add_response(json={"code": 0, "msg": "", "data": []})  # retry
 
     await client.call("/api/notebook/lsNotebooks")
-    await client.call("/api/notebook/lsNotebooks")
+
+    paths = [r.url.path for r in httpx_mock.get_requests()]
+    assert paths == [
+        "/api/notebook/lsNotebooks",
+        "/api/system/loginAuth",
+        "/api/notebook/lsNotebooks",
+    ]
+    assert client._session_authed is True
+    assert "Authorization" not in client._http.headers
+
+
+@pytest.mark.asyncio
+async def test_login_attempted_once_when_token_rejected(client, httpx_mock):
+    """A token the kernel keeps rejecting costs one loginAuth per process, not one per call."""
+    httpx_mock.add_response(status_code=401, text="unauthorized")  # call 1
+    httpx_mock.add_response(
+        json={"code": -1, "msg": "Please enter the captcha", "data": None}
+    )  # loginAuth fails
+    httpx_mock.add_response(status_code=401, text="unauthorized")  # call 1 retry
+    httpx_mock.add_response(status_code=401, text="unauthorized")  # call 2
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.call("/api/notebook/lsNotebooks")
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.call("/api/notebook/lsNotebooks")
 
     login_requests = [r for r in httpx_mock.get_requests() if "loginAuth" in str(r.url)]
     assert len(login_requests) == 1

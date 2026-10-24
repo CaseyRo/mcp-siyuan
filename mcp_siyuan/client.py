@@ -51,6 +51,7 @@ class SiYuanClient:
         self._token = token if token is not None else settings.siyuan_token.get_secret_value()
         self._http: httpx.AsyncClient | None = None
         self._session_authed = False
+        self._login_attempted = False
 
     async def _client(self) -> httpx.AsyncClient:
         if self._http is None or self._http.is_closed:
@@ -95,10 +96,6 @@ class SiYuanClient:
         """
         client = await self._client()
 
-        # Ensure we're authenticated
-        if not self._session_authed and self._token:
-            await self._login()
-
         max_attempts = max(1, int(settings.siyuan_retry_max_attempts))
         backoff = max(0.0, float(settings.siyuan_retry_initial_backoff))
         max_backoff = max(backoff, float(settings.siyuan_retry_max_backoff))
@@ -108,6 +105,11 @@ class SiYuanClient:
         for attempt in range(1, max_attempts + 1):
             try:
                 resp = await client.post(endpoint, json=payload)
+                if resp.status_code == 401 and self._token and not self._login_attempted:
+                    # Header auth rejected: try the session login once, then retry.
+                    self._login_attempted = True
+                    await self._login()
+                    resp = await client.post(endpoint, json=payload)
                 resp.raise_for_status()
                 break
             except httpx.ConnectError as exc:
