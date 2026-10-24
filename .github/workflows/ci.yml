@@ -29,7 +29,6 @@ jobs:
       - name: Security audit (locked runtime deps)
         run: |
           uv export --frozen --no-dev --no-emit-project -o requirements-audit.txt
-          IGNORE=$(grep -v '^#' .github/pip-audit-ignore.txt | sed 's/^/--ignore-vuln /')
-          uvx pip-audit==2.9.0 --no-deps --disable-pip -r requirements-audit.txt $IGNORE
+          uvx pip-audit==2.9.0 --no-deps --disable-pip -r requirements-audit.txt
       - run: uv run ruff check
       - run: uv run pytest
