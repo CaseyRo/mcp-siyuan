@@ -8,7 +8,7 @@ RUN --mount=type=bind,target=/src \
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
 
 # Install EXACTLY what uv.lock pins — never re-resolve at build time.
 # (Incident 2026-07-07 on mcp-stolperstein: an unpinned `pip install .` here

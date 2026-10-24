@@ -37,3 +37,8 @@ dev = [
     "pytest-httpx>=0.34",
     "ruff>=0.8",
 ]
+
+[tool.uv]
+# Pillow (via weasyprint): every advisory on 12.3.0 is fixed only in 13.0.0 (major).
+# Held in 12.x until its own Pillow 13 PR; residual listed in .github/pip-audit-ignore.txt.
+constraint-dependencies = ["pillow>=12.3.0,<13"]
