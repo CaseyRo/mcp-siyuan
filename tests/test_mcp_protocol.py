@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from mcp_siyuan.server import mcp
 
@@ -91,3 +92,47 @@ async def test_a_tool_call_writes_one_usage_line(capsys):
     lines = [ln for ln in capsys.readouterr().err.splitlines() if '"mcp_usage"' in ln]
     assert len(lines) == 1
     assert all(s in lines[0] for s in ('"siyuan"', '"list_notebooks"', '"outcome": "ok"'))
+
+
+@pytest.mark.asyncio
+async def test_sql_query_schema_advertises_stmt_aliases():
+    """CDI-2079: the LLM must see that `sql` and `query` work, not just `stmt`."""
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+    schema = tools["sql_query"].input_schema
+    assert {"stmt", "sql", "query"} <= set(schema["properties"])
+    assert not schema.get("required")
+    assert "SELECT statement" in schema["properties"]["stmt"]["description"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["stmt", "sql", "query"])
+async def test_sql_query_accepts_stmt_and_aliases(name):
+    with patch("mcp_siyuan.tools.read.sy") as sy:
+        sy.call = AsyncMock(return_value=[{"id": "b1", "content": "hi"}])
+        async with Client(mcp) as client:
+            result = await client.call_tool("sql_query", {name: "SELECT id FROM blocks LIMIT 1"})
+    sy.call.assert_awaited_once_with("/api/query/sql", stmt="SELECT id FROM blocks LIMIT 1")
+    assert "b1" in result.content[0].text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args", [{}, {"stmt": "SELECT 1", "sql": "SELECT 2"}])
+async def test_sql_query_needs_exactly_one_statement(args):
+    with patch("mcp_siyuan.tools.read.sy") as sy:
+        sy.call = AsyncMock()
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="exactly one of `stmt`, `sql` or `query`"):
+                await client.call_tool("sql_query", args)
+    sy.call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["stmt", "sql", "query"])
+async def test_sql_query_alias_still_read_only(name):
+    with patch("mcp_siyuan.tools.read.sy") as sy:
+        sy.call = AsyncMock()
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="Only SELECT"):
+                await client.call_tool("sql_query", {name: "DELETE FROM blocks"})
+    sy.call.assert_not_awaited()

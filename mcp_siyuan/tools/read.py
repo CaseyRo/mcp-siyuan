@@ -28,8 +28,15 @@ async def list_notebooks() -> list[NotebookInfo]:
     return [NotebookInfo(**Notebook(**nb).model_dump()) for nb in raw]
 
 
-async def sql_query(stmt: str) -> list[SqlRow]:
+async def sql_query(
+    stmt: Annotated[str | None, Field(description="The SQL SELECT statement to run.")] = None,
+    sql: Annotated[str | None, Field(description="Alias of `stmt`: the SELECT statement.")] = None,
+    query: Annotated[str | None, Field(description="Alias of `stmt`: the SELECT statement.")] = None,
+) -> list[SqlRow]:
     """[notes] Execute a read-only SQL SELECT against SiYuan's internal database.
+
+    Pass the SELECT statement as `stmt`; `sql` and `query` are accepted aliases.
+    Give exactly one of them.
 
     Only SELECT statements are permitted. A LIMIT is enforced if not provided.
 
@@ -45,6 +52,14 @@ async def sql_query(stmt: str) -> list[SqlRow]:
 
     Example: SELECT id, content FROM blocks WHERE content LIKE '%TODO%' LIMIT 10
     """
+    # CDI-2079: callers often name the statement `sql` or `query`; accept both.
+    given = [s for s in (stmt, sql, query) if s is not None]
+    if len(given) != 1:
+        raise ToolError(
+            "Pass the SELECT statement in exactly one of `stmt`, `sql` or `query` "
+            f"(got {len(given)})."
+        )
+    stmt = given[0]
     if not _ALLOWED_STMT_RE.match(stmt):
         raise ValueError("Only SELECT statements are permitted.")
     if not re.search(r"\bLIMIT\s+\d+", stmt, re.IGNORECASE):
