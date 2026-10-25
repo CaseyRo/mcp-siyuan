@@ -22,8 +22,8 @@ from mcp_siyuan.models import (
     ListedDoc,
     OutlineHeading,
     RecentDoc,
-    TaggedBlock,
     TagCount,
+    TaggedBlock,
     TaskItem,
 )
 from mcp_siyuan.tools.read import get_block

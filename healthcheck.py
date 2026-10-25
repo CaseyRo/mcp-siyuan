@@ -1,6 +1,6 @@
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 
 try:
     urllib.request.urlopen("http://localhost:8000/health", timeout=3)

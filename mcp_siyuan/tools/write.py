@@ -6,7 +6,6 @@ import logging
 from typing import Annotated, Any, Literal
 
 import anyio
-
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
 from markdown_it import MarkdownIt
@@ -217,9 +216,10 @@ def _split_blocks(markdown: str) -> list[str]:
         for t in _md.parse(markdown)
         if t.level == 0 and t.nesting >= 0 and t.map
     ]
-    ends = starts[1:] + [len(lines)]
+    ends = [*starts[1:], len(lines)]
+    # Not strict: with no blocks, ends is [len(lines)] and the truncation yields [].
     return [
-        "\n".join(lines[a:b]).strip("\n") for a, b in zip(starts, ends)
+        "\n".join(lines[a:b]).strip("\n") for a, b in zip(starts, ends, strict=False)
     ]
 
 
@@ -240,8 +240,9 @@ def _list_items(block: str) -> list[str]:
         for t in _md.parse(block)
         if t.type == "list_item_open" and t.level == 1 and t.map
     ]
-    ends = starts[1:] + [len(lines)]
-    return ["\n".join(lines[a:b]).strip("\n") for a, b in zip(starts, ends)]
+    ends = [*starts[1:], len(lines)]
+    # Not strict: with no items, ends is [len(lines)] and the truncation yields [].
+    return ["\n".join(lines[a:b]).strip("\n") for a, b in zip(starts, ends, strict=False)]
 
 
 async def _is_list_item(id: str) -> bool:

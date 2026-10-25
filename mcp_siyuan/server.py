@@ -6,14 +6,13 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastmcp import FastMCP
 from mcp.types import Icon, ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from mcp_siyuan.usage import UsageMiddleware
 from mcp_siyuan import GIT_COMMIT, __version__
 from mcp_siyuan.auth import BearerTokenVerifier
 from mcp_siyuan.client import sy
@@ -22,6 +21,7 @@ from mcp_siyuan.models import OutlineHeading
 from mcp_siyuan.observability import diag_buffer
 from mcp_siyuan.observability.logging_setup import configure_logging
 from mcp_siyuan.observability.tracing import traced_tool
+from mcp_siyuan.tools.export import export_pdf
 from mcp_siyuan.tools.read import (
     get_block,
     get_block_attrs,
@@ -46,7 +46,6 @@ from mcp_siyuan.tools.smart import (
     search_by_tag,
     search_with_context,
 )
-from mcp_siyuan.tools.export import export_pdf
 from mcp_siyuan.tools.write import (
     append_block,
     append_to_section,
@@ -68,6 +67,7 @@ from mcp_siyuan.tools.write import (
     update_block,
     upsert_section,
 )
+from mcp_siyuan.usage import UsageMiddleware
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -301,7 +301,7 @@ async def status_resource() -> dict:
         "transport": settings.transport,
         "upstream_reachable": upstream_ok,
         "uptime_seconds": int(
-            (datetime.now(timezone.utc) - _start_time).total_seconds()
+            (datetime.now(UTC) - _start_time).total_seconds()
         ),
     }
 
@@ -351,7 +351,7 @@ def process_inbox_prompt(notebook: str, limit: int = 10) -> str:
 
 
 # --- Health endpoint + upstream probe -------------------------------------
-_start_time = datetime.now(timezone.utc)
+_start_time = datetime.now(UTC)
 _probe_ttl = settings.upstream_probe_interval
 _probe_state: dict = {"ok": False, "checked_at": 0.0}
 
@@ -370,7 +370,7 @@ async def _probe_upstream() -> bool:
         if not _probe_state["ok"]:
             logger.info("Upstream SiYuan kernel reachable")
         _probe_state["ok"] = True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         if _probe_state["ok"] or _probe_state["checked_at"] == 0.0:
             logger.error("Upstream SiYuan kernel probe timed out (>2s)")
         _probe_state["ok"] = False
@@ -401,7 +401,7 @@ async def health_check(request: Request) -> JSONResponse:
         "git_commit": GIT_COMMIT,
         "upstream_reachable": upstream_ok,
         "uptime_seconds": int(
-            (datetime.now(timezone.utc) - _start_time).total_seconds()
+            (datetime.now(UTC) - _start_time).total_seconds()
         ),
     }
     if request.query_params.get("diag") == "1":

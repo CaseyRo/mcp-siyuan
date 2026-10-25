@@ -3,6 +3,7 @@
 import warnings
 
 import pytest
+from pydantic import ValidationError
 
 from mcp_siyuan.config import Settings
 
@@ -32,7 +33,7 @@ def test_settings_from_env(monkeypatch):
 
 def test_invalid_transport():
     """Invalid transport value raises validation error."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Settings(transport="websocket", siyuan_token="t")
 
 
