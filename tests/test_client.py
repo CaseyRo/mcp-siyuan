@@ -1,7 +1,7 @@
 """Tests for the SiYuan HTTP client."""
 
-import pytest
 import httpx
+import pytest
 
 from mcp_siyuan.client import SiYuanClient, SiYuanError
 

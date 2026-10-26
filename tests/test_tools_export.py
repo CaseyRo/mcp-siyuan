@@ -177,6 +177,7 @@ def test_page_css_landscape_swaps():
 async def test_export_pdf_default(mock_sy, mock_settings, mock_render):
     """Default export returns a File and a text summary."""
     from fastmcp.utilities.types import File
+
     from mcp_siyuan.tools.export import export_pdf
 
     mock_sy.call.return_value = {

@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, patch
 import anyio
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fake elicitation Context helpers
 # ---------------------------------------------------------------------------
