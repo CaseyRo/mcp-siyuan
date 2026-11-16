@@ -5,7 +5,7 @@ RUN --mount=type=bind,target=/src \
     git -c safe.directory='*' -C /src rev-parse --short HEAD > /git_commit 2>/dev/null \
     || echo unknown > /git_commit
 
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
@@ -20,7 +20,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY mcp_siyuan/ mcp_siyuan/
 RUN uv sync --frozen --no-dev
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
